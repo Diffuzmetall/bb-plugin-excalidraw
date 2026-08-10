@@ -10,6 +10,8 @@ import {
 	sceneAgentCreateRequestSchema,
 	sceneAgentReadRequestSchema,
 	sceneReadResultSchema,
+	sceneListRequestSchema,
+	sceneListResultSchema,
 	sceneRequestSchema,
 	sceneWriteResultSchema,
 } from "./scene-service.js";
@@ -23,6 +25,10 @@ export const excalidrawRpcContract = defineRpcContract({
 		input: saveSceneRequestSchema,
 		output: sceneWriteResultSchema,
 	},
+	listScenes: {
+		input: sceneListRequestSchema,
+		output: sceneListResultSchema,
+	},
 	ping: {
 		input: z.null(),
 		output: z.object({ ok: z.literal(true) }).strict(),
@@ -35,6 +41,7 @@ export default async function plugin(bb: BbPluginApi) {
 	const handlers = createSceneHandlers(bb);
 	const {
 		readScene,
+		listScenes,
 		readSemanticScene,
 		createSemanticScene,
 		applySemanticScene,
@@ -44,6 +51,7 @@ export default async function plugin(bb: BbPluginApi) {
 	bb.rpc.register(excalidrawRpcContract, {
 		readScene,
 		saveScene,
+		listScenes,
 		ping() {
 			return { ok: true as const };
 		},
@@ -105,16 +113,20 @@ export default async function plugin(bb: BbPluginApi) {
 			};
 		},
 	});
-	bb.agents.configure((context) => ({
-		tools:
-			context.environment.path === null
-				? []
-				: [
-						"excalidraw_scene_read",
-						"excalidraw_scene_create",
-						"excalidraw_scene_apply",
-					],
-		skills: [],
-	}));
+	bb.agents.configure((context) => {
+		if (context.environment.path === null) {
+			return { tools: [], skills: [] };
+		}
+		return {
+			tools: [
+				"excalidraw_scene_read",
+				"excalidraw_scene_create",
+				"excalidraw_scene_apply",
+			],
+			skills: ["excalidraw"],
+			instructions:
+				"For .excalidraw work, use the Excalidraw semantic tools or bb excalidraw CLI. Read before applying changes, use the returned revision, and never edit native scene JSON directly.",
+		};
+	});
 	bb.log.info("Excalidraw scene RPC and semantic read tool loaded");
 }

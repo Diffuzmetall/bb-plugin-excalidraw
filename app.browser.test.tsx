@@ -27,9 +27,13 @@ let resolveReadScene: (() => void) | undefined;
 vi.mock("@bb/plugin-sdk/app", () => {
 	const app = {
 		fileOpeners: [] as Array<Record<string, unknown>>,
+		threadPanelActions: [] as Array<Record<string, unknown>>,
 		slots: {
 			fileOpener(config: Record<string, unknown>) {
 				app.fileOpeners.push(config);
+			},
+			threadPanelAction(config: Record<string, unknown>) {
+				app.threadPanelActions.push(config);
 			},
 		},
 	};
@@ -123,9 +127,7 @@ describe("Excalidraw opener Chromium gates", () => {
 		);
 		if (!mount) throw new Error("missing plugin mount");
 		expect(mount.getAttribute("data-embeddables")).toBe("disabled");
-		expect(
-			mount.querySelector('[role="status"]')?.getAttribute("aria-live"),
-		).toBe("polite");
+		expect(mount.querySelector('[role="status"]')).toBeNull();
 		for (const href of [
 			"javascript:alert(1)",
 			"data:text/html,owned",

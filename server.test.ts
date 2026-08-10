@@ -32,6 +32,25 @@ describe("Excalidraw server", () => {
 					}),
 				},
 				files: {
+					listPaths: () => ({
+						paths: [
+							{
+								kind: "file" as const,
+								path: "AI+MAN.excalidraw",
+								name: "AI+MAN.excalidraw",
+								score: 0,
+								positions: [],
+							},
+							{
+								kind: "file" as const,
+								path: "README.md",
+								name: "README.md",
+								score: 0,
+								positions: [],
+							},
+						],
+						truncated: false,
+					}),
 					read: () => ({
 						content: scene,
 						contentEncoding: "utf8",
@@ -43,6 +62,22 @@ describe("Excalidraw server", () => {
 			},
 		});
 		await plugin(host.bb);
+		await expect(
+			host.harness.behavior.callRpc("listScenes", {
+				threadId: "call-42",
+			}),
+		).resolves.toEqual({
+			status: "ready",
+			paths: ["AI+MAN.excalidraw"],
+			truncated: false,
+		});
+		expect(host.harness.sdk.callsTo("files.listPaths")[0]?.[0]).toEqual({
+			hostId: "host-env-call-42",
+			path: "/remote/env-call-42",
+			includeFiles: true,
+			includeDirectories: false,
+			limit: 10_000,
+		});
 		expect(host.harness.registrations.cli).toMatchObject({
 			name: "excalidraw",
 			commands: expect.arrayContaining([
@@ -201,8 +236,11 @@ describe("Excalidraw server", () => {
 		expect(host.harness.inspection.realtimeSignals).toEqual([]);
 	});
 
-	it("selects the tool only for a live workspace environment", async () => {
-		const host = createFakePluginHost({ pluginId: "excalidraw" });
+	it("selects the tools and skill only for a live workspace environment", async () => {
+		const host = createFakePluginHost({
+			pluginId: "excalidraw",
+			agentSkillIds: ["excalidraw"],
+		});
 		await plugin(host.bb);
 		const context = {
 			thread: {
@@ -236,12 +274,16 @@ describe("Excalidraw server", () => {
 			"excalidraw_scene_create",
 			"excalidraw_scene_apply",
 		]);
+		expect(liveConfiguration.skills).toEqual(["excalidraw"]);
+		expect(liveConfiguration.instructions).toContain(
+			"never edit native scene JSON directly",
+		);
 		await expect(
 			host.harness.resolveAgentConfiguration({
 				...context,
 				environment: { ...context.environment, path: null },
 			}),
-		).resolves.toMatchObject({ tools: [] });
+		).resolves.toMatchObject({ tools: [], skills: [] });
 	});
 
 	it("registers scene RPC methods with schema validation", async () => {
@@ -251,6 +293,7 @@ describe("Excalidraw server", () => {
 		expect(host.harness.inspection.registrations.rpcMethods).toEqual([
 			"readScene",
 			"saveScene",
+			"listScenes",
 			"ping",
 		]);
 		await expect(host.harness.behavior.callRpc("ping", null)).resolves.toEqual({

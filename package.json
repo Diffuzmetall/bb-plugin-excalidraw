@@ -27,6 +27,7 @@
     "server.ts",
     "styles.css",
     "styles.d.ts",
+    "excalidraw.css",
     "branding",
     "skills",
     "CHANGELOG.md",
@@ -55,6 +56,7 @@
   },
   "scripts": {
     "build": "bb plugin build .",
+    "vendor:css": "node scripts/vendor-excalidraw-css.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:browser": "vitest run --config vitest.browser.config.ts",

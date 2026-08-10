@@ -36,6 +36,7 @@ This plugin adds a native Excalidraw canvas to BB and exposes the same workspace
 | Capability | What you get |
 | --- | --- |
 | Native canvas | Open and edit `.excalidraw` files inside BB |
+| Workspace launcher | Start from **New tab → Actions** and choose an existing drawing or create a new one |
 | Revision-safe writes | Every mutation is checked against the revision that was read |
 | Agent automation | Read summaries, create scenes, and apply semantic operations without returning raw image bodies |
 | CLI parity | The same read/create/apply workflow is available through `bb excalidraw` |
@@ -234,7 +235,7 @@ BB file browser / editor slot
  agent tools / bb excalidraw CLI
 ```
 
-BB supplies the Plugin SDK and shared frontend runtime when the plugin runs. The matching SDK files under `vendor/bb-plugin-sdk` exist only to make standalone typechecking and tests reproducible.
+BB supplies the Plugin SDK and shared frontend runtime when the plugin runs. The matching SDK files under `vendor/bb-plugin-sdk` exist only to make standalone typechecking and tests reproducible. Excalidraw's production stylesheet is checked in as `excalidraw.css` with its fonts inlined so Git and path installs can build without relying on conditional CSS exports.
 
 ## Development
 
@@ -247,7 +248,7 @@ npm run test:browser
 bb plugin build .
 ```
 
-`npm run check` runs typechecking plus the unit/integration suite. Browser tests cover canvas mounting, accessibility, link policy, and deterministic scene behavior.
+`npm run check` runs typechecking plus the unit/integration suite. Browser tests cover canvas mounting, accessibility, link policy, and deterministic scene behavior. After upgrading `@excalidraw/excalidraw`, regenerate and review the vendored production stylesheet with `npm run vendor:css`.
 
 Before publishing a tag, also verify a clean runtime-only source build:
 
