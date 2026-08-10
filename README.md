@@ -5,7 +5,7 @@
 <h1 align="center">BB Excalidraw plugin</h1>
 
 <p align="center">
-  Native Excalidraw editing in BB, with revision-safe agent tools and matching CLI commands.
+  Native Excalidraw canvases in BB, plus a diagram-design skill, revision-safe agent tools, and matching CLI commands.
 </p>
 
 <p align="center">
@@ -19,131 +19,276 @@
 bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.1.0 --yes
 ```
 
-> If your BB release already bundles Excalidraw, install the official bundled copy instead: `bb plugin install excalidraw --yes`.
+> If your BB release already bundles Excalidraw, install the bundled copy with `bb plugin install excalidraw --yes` instead. Official plugin IDs cannot be shadowed by another installation.
 
-## TL;DR
+## What this plugin does
 
-### The problem
+An `.excalidraw` file is JSON, but treating it as generic JSON loses the interactive canvas and gives agents an unsafe, unbounded mutation surface. This plugin provides one workflow for humans and agents while keeping the workspace file canonical:
 
-An `.excalidraw` file is JSON, but a generic JSON editor cannot provide the canvas, preserve Excalidraw scene behavior, or safely coordinate concurrent human and agent edits.
+- humans edit the real scene through a native Excalidraw canvas inside BB;
+- agents receive a BB-native diagram-design skill and three typed semantic tools;
+- scripts use equivalent `bb excalidraw` read, create, and apply commands;
+- every mutation is protected by SHA-256 compare-and-swap;
+- clean open canvases reconcile external writes immediately;
+- dirty local drafts remain visible and enter a conflict state instead of being overwritten.
 
-### The solution
+## Included capabilities
 
-This plugin adds a native Excalidraw canvas to BB and exposes the same workspace scene through bounded semantic agent tools and `bb excalidraw` CLI commands. Writes use SHA-256 compare-and-swap, so stale agents cannot silently replace newer work.
-
-### Why use it?
-
-| Capability | What you get |
+| Capability | Behavior |
 | --- | --- |
-| Native canvas | Open and edit `.excalidraw` files inside BB |
-| Workspace launcher | Start from **New tab → Actions** and choose an existing drawing or create a new one |
-| Revision-safe writes | Every mutation is checked against the revision that was read |
-| Agent automation | Read summaries, create scenes, and apply semantic operations without returning raw image bodies |
-| Diagram-design skill | BB-native guidance for architectures, workflows, timelines, comparisons, and visual explanations |
-| CLI parity | The same read/create/apply workflow is available through `bb excalidraw` |
-| Conflict retention | Clean files reload; dirty local drafts remain visible when an external write conflicts |
-| Workspace confinement | BB resolves the host and workspace from the active thread and environment |
-| Realtime invalidation | Successful external writes refresh clean open documents without CRDT complexity |
+| Native file opener | Opens `.excalidraw` files as an interactive canvas instead of raw JSON |
+| Workspace launcher | **New tab → Actions → Excalidraw** discovers and switches between existing workspace drawings |
+| Native theme control | The canvas menu provides Excalidraw's light, dark, and system selector |
+| Diagram-design skill | Teaches agents how to plan workflows, architectures, timelines, decisions, comparisons, and feedback loops |
+| Semantic agent tools | Read bounded summaries, create scenes, and apply typed operations without native JSON editing |
+| CLI parity | Exposes the same safe read/create/apply lifecycle through `bb excalidraw` |
+| Safe concurrency | Uses expected revisions, writer nonces, realtime invalidation, and visible dirty conflicts |
+| Scene preservation | Preserves native app state, files, images, and unknown properties that semantic operations do not target |
+| Model-safe reads | Omits raw scene bytes, base64 image bodies, and deleted Excalidraw tombstones |
+| Workspace authority | Resolves the host and workspace from the active BB thread and environment |
 
-## Quick example
+## Five-minute quick start
 
-```bash
-# 1. Install from the tagged Git source.
-bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.1.0 --yes
-
-# 2. Confirm that BB loaded the plugin.
-bb plugin list
-
-# 3. Create a scene in the active thread's workspace.
-bb excalidraw create drawings/system.excalidraw \
-  --scene '{"elements":[{"id":"box-1","type":"rectangle","x":80,"y":80,"width":240,"height":100,"strokeColor":"#1b1b1f","backgroundColor":"#dbeafe"}]}' \
-  --thread <thread-id> \
-  --json
-
-# 4. Read the model-safe scene summary and copy its revision.
-bb excalidraw read drawings/system.excalidraw \
-  --thread <thread-id> \
-  --json
-
-# 5. Apply a semantic operation against that exact revision.
-bb excalidraw apply drawings/system.excalidraw \
-  --expected-sha256 <sha256-from-read> \
-  --operations '[{"type":"create","element":{"id":"label-1","type":"text","x":120,"y":110,"width":80,"height":32,"strokeColor":"#1b1b1f","backgroundColor":"transparent","text":"BB","fontSize":24,"color":"#1b1b1f"}}]' \
-  --thread <thread-id> \
-  --json
-
-# 6. Read again to inspect the new revision.
-bb excalidraw read drawings/system.excalidraw --thread <thread-id> --json
-```
-
-To use the canvas, choose **Excalidraw** as the default `.excalidraw` opener under **Settings → Files**, then open a drawing from the BB file browser. The canvas menu includes Excalidraw's native **Theme** control: choose light, dark, or system; the preference applies across drawings in this BB client and does not modify scene files.
-
-## Design principles
-
-1. **Workspace files are canonical.** The plugin reads and writes the real `.excalidraw` file through BB's workspace APIs.
-2. **Mutations are compare-and-swap.** Read first, apply against the returned SHA-256 revision, then read again.
-3. **The server owns authority.** Agent and CLI inputs cannot supply host IDs, workspace roots, absolute paths, or force flags.
-4. **Model responses are semantic and bounded.** Scene summaries omit raw file content, image bodies, and deleted Excalidraw tombstones.
-5. **Realtime means invalidation, not collaboration.** Successful writes notify other open views; this is not a CRDT or multiplayer cursor system.
-6. **Unknown scene data survives edits.** Native app state, files, and unrecognized properties are preserved by scene transformations.
-
-## Choose the right installation
-
-| Option | Best for | Canvas | Agent/CLI tools | Update source |
-| --- | --- | ---: | ---: | --- |
-| BB bundled Excalidraw | Users whose BB release already includes the official plugin | Yes | Yes | BB release |
-| This Git repository | Independent installation, review, or maintenance | Yes | Yes | Git tag |
-| Generic JSON editor | Emergency inspection only | No | No | Not applicable |
-
-Prefer the bundled copy when available because BB reserves official plugin IDs. Use this repository when the plugin is not bundled or when another agent needs an independently reviewable source tree.
-
-## Installation
-
-### Git source
-
-Use the tagged Git source when Excalidraw is not already reserved as a bundled official plugin:
+### 1. Install and verify
 
 ```bash
 bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.1.0 --yes
 bb plugin list
 ```
 
-Requirements:
-
-- BB 0.35.1 or newer
-- BB Plugin SDK 0.4.x
-- Node.js 22.19 or newer for Git-source installation
-- Git and npm on `PATH`
-
-### Bundled official plugin
-
-Some BB releases ship Excalidraw as an official bundled plugin. In that case, the plugin ID is reserved and a second Git or local-path copy cannot shadow it:
-
-```bash
-bb plugin install excalidraw --yes
-bb plugin list
-```
-
-### Development checkout
-
-For development against a BB build where the `excalidraw` ID is not reserved:
+For a development checkout, install the local path instead:
 
 ```bash
 git clone https://github.com/Diffuzmetall/bb-plugin-excalidraw.git
 cd bb-plugin-excalidraw
 npm install
 npm run check
-npm run test:browser
 bb plugin build .
 bb plugin install . --yes
 bb plugin reload excalidraw
 ```
 
-The repository is intentionally npm-shaped but has `private: true`; Git is the supported external distribution path, and accidental npm publication is disabled.
+### 2. Open or create a drawing
+
+To open an existing scene:
+
+1. Choose **Excalidraw** as the default `.excalidraw` opener under **Settings → Files**.
+2. Open the file from BB Files, or choose **New tab → Actions → Excalidraw**.
+3. If the workspace contains several drawings, select one from the **Drawing** menu.
+
+The launcher lists existing scenes; it does not invent an empty file. Create a new drawing with an agent or the CLI first.
+
+Example agent request:
+
+> Create `diagrams/order-lifecycle.excalidraw`. Show intake, validation, a payment decision, fulfillment, and a labeled retry loop. Use the Excalidraw tools, validate the final connections, and summarize what you created.
+
+Equivalent CLI create:
+
+```bash
+bb excalidraw create diagrams/order-lifecycle.excalidraw \
+  --thread <thread-id> \
+  --scene '{
+    "elements": [
+      {
+        "id": "intake",
+        "type": "rectangle",
+        "x": 100,
+        "y": 120,
+        "width": 220,
+        "height": 100,
+        "strokeColor": "#1971c2",
+        "backgroundColor": "#e7f5ff",
+        "label": {
+          "id": "intake_label",
+          "text": "Order intake",
+          "fontSize": 20,
+          "color": "#1e1e1e"
+        }
+      }
+    ]
+  }' \
+  --json
+```
+
+### 3. Use the canvas theme selector
+
+Open the canvas menu and use the native **Theme** row:
+
+- sun: light mode;
+- moon: dark mode;
+- monitor: follow the BB/system light-dark mode.
+
+The preference applies across drawings in this BB client. Theme changes are UI-only: they do not dirty or rewrite scene files.
+
+## Agent-native diagram skill
+
+The plugin contributes the `excalidraw` skill to workspace-backed BB agents. It is enabled together with these tools:
+
+| Tool | Purpose |
+| --- | --- |
+| `excalidraw_scene_read` | Read a bounded semantic summary and current revision |
+| `excalidraw_scene_create` | Create a scene at a new workspace-relative path |
+| `excalidraw_scene_apply` | Atomically apply semantic operations against an expected revision |
+
+The agent is explicitly instructed to use the semantic tools or CLI and never edit native `.excalidraw` JSON directly.
+
+### What the skill teaches
+
+The skill treats a diagram as a visual explanation rather than a grid of labeled cards. Before drawing, the agent identifies:
+
+- the audience and the question the diagram must answer;
+- the primary reading direction;
+- the dominant entity, transition, or result;
+- whether the output is an overview or a technical teaching artifact;
+- whether each relationship is sequential, causal, hierarchical, optional, convergent, or bidirectional.
+
+It then chooses geometry that expresses that meaning:
+
+| Diagram pattern | Recommended structure |
+| --- | --- |
+| Sequence or workflow | One dominant horizontal or vertical flow with every transition connected |
+| Fan-out | One source, separated targets, and one distinct arrow per target |
+| Convergence | Multiple inputs aligned toward one clearly separated result |
+| Decision | A diamond with explicitly labeled outgoing outcomes |
+| Timeline | A spine, ordered markers, and nearby free-standing milestone labels |
+| Hierarchy | A tree or meaningful framed system boundaries |
+| Feedback loop | A dominant forward path with the return arrow routed outside it |
+| Comparison | Parallel lanes with common baselines and matching scale |
+| System architecture | Owned components grouped in frames, with concrete boundary and event labels |
+
+The complete guidance lives in [`skills/excalidraw/references/design-guide.md`](./skills/excalidraw/references/design-guide.md).
+
+### Safe agent workflow
+
+For an existing scene, the expected loop is:
+
+1. **Read** — inspect the revision, bounds, labels, connections, overlaps, images, and element counts.
+2. **Plan** — choose stable semantic IDs, coordinates, regions, and arrow routes before writing.
+3. **Apply** — send one bounded create/update/delete batch using the exact revision from the read.
+4. **Handle conflicts** — if the revision is stale, read again and re-plan; never retry blindly.
+5. **Validate** — read again and verify the new revision, expected labels, bound connections, plausible bounds, and intentional overlaps.
+6. **Inspect visually** — ask the user to review the live BB canvas when spacing, clipping, hierarchy, or crossings require human judgment.
+
+For larger diagrams, the skill builds in coherent passes:
+
+1. establish the main flow and major regions;
+2. add one region per apply batch;
+3. connect regions only after both endpoints exist;
+4. namespace IDs by region, such as `ingest_queue` and `review_decision`;
+5. read and validate after every meaningful batch.
+
+### Visual defaults
+
+The skill includes practical starting values rather than forcing one visual style:
+
+- title text: 28–36 px;
+- section headings: 20–26 px;
+- labels: 16–20 px;
+- primary process: approximately 220×100;
+- secondary process: approximately 160×80;
+- sequence gap: 100–160 px;
+- major-region gap: 220–320 px;
+- outer margin: at least 80 px.
+
+Its default palette assigns color by semantic purpose:
+
+| Purpose | Fill | Stroke |
+| --- | --- | --- |
+| Neutral process | `#e7f5ff` | `#1971c2` |
+| Start or input | `#fff3bf` | `#e67700` |
+| Success or output | `#d3f9d8` | `#2b8a3e` |
+| Decision | `#ffec99` | `#f08c00` |
+| AI or automation | `#e5dbff` | `#7048e8` |
+| Warning or error | `#ffe3e3` | `#c92a2a` |
+| Neutral text or line | `transparent` | `#1e1e1e` |
+
+### Useful agent prompts
+
+Create a technical architecture:
+
+> Create `diagrams/event-processing.excalidraw`. Explain how API requests fan out to workers and converge at aggregation. Include concrete event names, frame the backend boundary, and validate every connection after creation.
+
+Improve an existing workflow:
+
+> Read `diagrams/release-flow.excalidraw`, preserve its current content, and make the approval decision and rollback loop easier to read. Use the current revision, then read again and report the final bounds and connections.
+
+Create a teaching diagram:
+
+> Build `diagrams/session-reconnect.excalidraw` as a technical teaching diagram. Show the client, WebSocket, reconnect state, invalidation event, and CAS retry. Use short implementation-level labels instead of generic boxes.
+
+## Semantic scene contract
+
+The semantic contract is intentionally smaller than native Excalidraw JSON. It supports the visual primitives agents need while keeping writes typed, reviewable, and bounded.
+
+### Supported elements
+
+| Element | Key semantic fields |
+| --- | --- |
+| `rectangle`, `ellipse`, `diamond` | Position, size, colors, optional bound label |
+| `text` | Position, dimensions, text, font size, color |
+| `arrow` | Relative points, optional label, optional start/end bindings |
+| `line` | Relative points and optional label, without bindings |
+| `frame` | Position, dimensions, colors, and boundary name |
+
+Common fields include stable `id`, coordinates, dimensions, `strokeColor`, `backgroundColor`, optional `groupIds`, and optional `frameId`. IDs are 1–128 characters and use letters, numbers, `_`, or `-`.
+
+For the full field-level contract and valid examples, read [`skills/excalidraw/references/semantic-format.md`](./skills/excalidraw/references/semantic-format.md).
+
+### Read output
+
+A semantic read returns a model-safe summary rather than native scene JSON:
+
+- current SHA-256 `revision`;
+- scene `bounds`;
+- total and per-type element counts;
+- semantic IDs, types, labels, groups, and frame membership;
+- arrow connection endpoints;
+- detected overlaps;
+- bounded image metadata without image bodies;
+- truncation and omitted-element indicators.
+
+Deleted native elements are excluded. Responses are capped at 256 KiB and progressively omit overlap, image, connection, and element detail when necessary.
+
+### Apply operations
+
+Apply accepts an atomic array of three operation types:
+
+```json
+[
+  {
+    "type": "create",
+    "element": {
+      "id": "published",
+      "type": "ellipse",
+      "x": 860,
+      "y": 120,
+      "width": 180,
+      "height": 90,
+      "strokeColor": "#2b8a3e",
+      "backgroundColor": "#d3f9d8"
+    }
+  },
+  {
+    "type": "update",
+    "id": "review",
+    "elementType": "diamond",
+    "changes": {
+      "x": 520,
+      "width": 200
+    }
+  },
+  {
+    "type": "delete",
+    "id": "obsolete_note"
+  }
+]
+```
+
+Each semantic ID may be targeted only once in a batch. Updates declare the existing element type so unsupported field combinations fail validation instead of being silently ignored.
 
 ## CLI reference
 
-All commands resolve workspace authority from `--thread` or the calling BB context. Paths must be normalized workspace-relative paths.
+All commands resolve workspace authority from `--thread` or the calling BB context. Paths must be normalized, workspace-relative `.excalidraw` paths.
 
 ### Read
 
@@ -151,7 +296,7 @@ All commands resolve workspace authority from `--thread` or the calling BB conte
 bb excalidraw read <path> [--thread <thread-id>] [--json]
 ```
 
-Returns a bounded semantic summary and the current SHA-256 revision. It does not return raw scene JSON or base64 image bodies.
+Returns the bounded semantic summary and current revision.
 
 ### Create
 
@@ -162,81 +307,114 @@ bb excalidraw create <path> \
   [--json]
 ```
 
-Creates a new scene only when the destination does not already exist. A collision returns a structured conflict instead of overwriting the file.
+Create is create-only. If the destination exists, the command returns a structured conflict and does not overwrite it.
 
 ### Apply
 
 ```bash
 bb excalidraw apply <path> \
   --expected-sha256 <revision> \
-  --operations '<operations-json>' \
+  --operations '<semantic-operations-json>' \
   [--thread <thread-id>] \
   [--json]
 ```
 
-Applies up to 500 semantic operations atomically. A stale revision returns the current revision and leaves the file unchanged.
+Apply supports up to 500 operations atomically. A stale revision returns the current revision and leaves the file unchanged.
 
-## Agent tool reference
+Inside a BB agent thread, the CLI can infer the thread. Outside a thread context, provide `--thread <thread-id>`.
 
-| Tool | Purpose |
-| --- | --- |
-| `excalidraw_scene_read` | Read a bounded semantic scene summary and revision |
-| `excalidraw_scene_create` | Create a new scene without overwriting an existing path |
-| `excalidraw_scene_apply` | Apply semantic operations against an expected revision |
+## Canvas and concurrency behavior
 
-Recommended agent workflow:
+The canvas and semantic writers coordinate around the same canonical workspace file.
 
-1. Call `excalidraw_scene_read`.
-2. Plan operations from the returned summary.
-3. Call `excalidraw_scene_apply` with the returned revision.
-4. If a conflict is returned, read again and re-plan; never retry blindly.
-5. Read once more to verify the result.
+### Human edits
 
-## Safety limits
+- The editor does not save merely because it mounted.
+- Viewport movement and theme changes are not durable scene changes.
+- Pointer-up, blur, and Mod+S flush a real dirty draft.
+- Save status stays hidden while clean and appears only while loading, dirty, saving, conflicted, or failed.
+
+### External agent or CLI writes
+
+- A clean editor reads and imperatively applies the new scene to the mounted Excalidraw canvas.
+- Programmatic reconciliation is excluded from undo history and does not bounce the old canvas back to disk.
+- A dirty editor retains the exact local draft and shows a conflict.
+- **Reload** discards the dirty draft, reads the current file, and reconciles the real canvas.
+- Closing the final editor releases its save coordinator so a later reopen starts from the current file.
+
+Realtime invalidation is not CRDT collaboration. There are no multiplayer cursors, automatic field merges, or silent last-writer-wins behavior.
+
+## Safety boundaries
 
 | Limit | Value |
 | --- | ---: |
 | Scene file size | 20 MiB |
-| Elements per scene | 10,000 |
+| Expanded elements per scene | 10,000 |
 | Operations per apply | 500 |
 | Text per element | 20,000 Unicode code points |
+| Points per line or arrow | 1,000 |
 | Model-facing response | 256 KiB |
 
-Additional boundaries:
+Additional invariants:
 
-- no force overwrite;
-- no absolute paths or traversal paths;
+- no force-overwrite operation;
+- no absolute or traversal paths;
 - no caller-supplied workspace roots or host IDs;
-- no raw scene file content or base64 image bodies in agent/CLI inputs or responses;
-- deleted Excalidraw tombstones are excluded from semantic summaries;
-- external embeddables are disabled;
-- link navigation is limited to HTTP and HTTPS.
+- no raw scene content or base64 image bodies in agent/CLI inputs or responses;
+- no native `.excalidraw` JSON editing by agents;
+- no external embeddables;
+- link navigation is limited to HTTP and HTTPS;
+- unknown native data and image files survive semantic edits.
 
 ## Architecture
 
 ```text
-BB file browser / editor slot
-            │
-            ▼
-     Excalidraw React canvas
-            │ explicit save + writer nonce
-            ▼
-       Save coordinator
-            │ expected SHA-256
-            ▼
-       BB workspace RPC ───────────────┐
-            │                         │ successful write
-            ▼                         ▼
- canonical .excalidraw file   realtime invalidation
-            ▲                         │
-            │                         ▼
-   semantic scene adapter      other open canvas views
-            ▲
-            │
- agent tools / bb excalidraw CLI
+                         workspace-backed BB agent
+                                   │
+                    excalidraw skill + instructions
+                                   │
+          ┌────────────────────────┴────────────────────────┐
+          │                                                 │
+ semantic read/create/apply tools                 bb excalidraw CLI
+          │                                                 │
+          └────────────────────────┬────────────────────────┘
+                                   ▼
+                      semantic schema + adapter
+                                   │ expected SHA-256
+                                   ▼
+BB Files / Actions ──► Excalidraw canvas ──► save coordinator
+          │                    │                     │
+          │                    └──── dirty conflict ┤
+          │                                          ▼
+          └──────────────────────────────► canonical workspace file
+                                                     │
+                                             successful write
+                                                     ▼
+                                            realtime invalidation
+                                                     │
+                                             other open canvases
 ```
 
-BB supplies the Plugin SDK and shared frontend runtime when the plugin runs. The matching SDK files under `vendor/bb-plugin-sdk` exist only to make standalone typechecking and tests reproducible. Excalidraw's production stylesheet is checked in as `excalidraw.css` with its fonts inlined so Git and path installs can build without relying on conditional CSS exports.
+BB supplies the Plugin SDK and shared frontend runtime. The files under `vendor/bb-plugin-sdk` reproduce that runtime and its declarations only for standalone typechecking and tests.
+
+Excalidraw's production stylesheet is checked in as `excalidraw.css`, with fonts inlined, so Git and path installs do not depend on conditional package CSS exports.
+
+## Installation options
+
+| Option | Use when | Command |
+| --- | --- | --- |
+| Bundled official plugin | Your BB release reserves the `excalidraw` plugin ID | `bb plugin install excalidraw --yes` |
+| Tagged Git source | BB does not bundle the plugin | `bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.1.0 --yes` |
+| Local path | Developing or testing this checkout | `bb plugin install . --yes` |
+
+Requirements for a source installation:
+
+- BB 0.35.1 or newer;
+- BB Plugin SDK 0.4.x compatibility;
+- Node.js 22.19 or newer;
+- Git and npm on `PATH`.
+
+The package is intentionally marked `private: true`. Git is the supported external distribution path; accidental npm publication is disabled.
 
 ## Development
 
@@ -249,9 +427,15 @@ npm run test:browser
 bb plugin build .
 ```
 
-`npm run check` runs typechecking plus the unit/integration suite. Browser tests cover canvas mounting, accessibility, link policy, and deterministic scene behavior. After upgrading `@excalidraw/excalidraw`, regenerate and review the vendored production stylesheet with `npm run vendor:css`.
+`npm run check` runs typechecking and the unit/integration suite. Browser tests exercise the real canvas, native theme control, accessibility, link policy, external reconciliation, dirty conflicts, Reload, and reopen behavior.
 
-Before publishing a tag, also verify a clean runtime-only source build:
+After upgrading `@excalidraw/excalidraw`, regenerate and review the vendored stylesheet:
+
+```bash
+npm run vendor:css
+```
+
+Before publishing a tag, verify a runtime-only source build:
 
 ```bash
 sandbox=$(mktemp -d)
@@ -261,7 +445,7 @@ npm install --ignore-scripts --omit=dev --omit=optional --no-audit --no-fund
 bb plugin build .
 ```
 
-Expected build artifacts:
+Expected artifacts:
 
 ```text
 dist/
@@ -273,39 +457,83 @@ dist/
 └── server.meta.json
 ```
 
+## Repository structure
+
+```text
+.
+├── app.tsx                         # Canvas file opener, launcher, theme, and conflict UI
+├── server.ts                       # RPC, agent tools, skill/tool configuration, and CLI registration
+├── cli.ts                          # bb excalidraw command surface
+├── scene-service.ts                # Workspace authority and scene read/write handlers
+├── save-coordinator.ts             # Debounce, CAS saves, conflict state, and realtime reconciliation
+├── semantic-schema.ts              # Strict semantic scene and operation contracts
+├── scene-adapter.ts                # Native Excalidraw ↔ semantic transformations
+├── scene-read-summary.ts           # Bounded model-safe scene summaries
+├── realtime-invalidation.ts        # Writer filtering and reconciliation decisions
+├── skills/excalidraw/
+│   ├── SKILL.md                    # Agent workflow and completion checklist
+│   └── references/
+│       ├── design-guide.md         # Layout patterns, palette, hierarchy, and review guidance
+│       └── semantic-format.md      # Supported fields, operations, and JSON examples
+├── docs/
+│   └── excalidraw-diagram-skill-integration.md
+├── scripts/vendor-excalidraw-css.mjs
+└── vendor/bb-plugin-sdk/           # Standalone SDK runtime/types used by tests and typecheck
+```
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [`skills/excalidraw/SKILL.md`](./skills/excalidraw/SKILL.md) | Agent planning, mutation, conflict, and validation workflow |
+| [`skills/excalidraw/references/design-guide.md`](./skills/excalidraw/references/design-guide.md) | Diagram patterns, dimensions, palette, labels, and review questions |
+| [`skills/excalidraw/references/semantic-format.md`](./skills/excalidraw/references/semantic-format.md) | Complete semantic element and operation examples |
+| [`docs/excalidraw-diagram-skill-integration.md`](./docs/excalidraw-diagram-skill-integration.md) | Provenance and BB-native adaptation rationale |
+| [`SECURITY.md`](./SECURITY.md) | Authority model, reporting, and dependency advisories |
+| [`CONTRIBUTING.md`](./CONTRIBUTING.md) | Development workflow and invariants for changes |
+| [`CHANGELOG.md`](./CHANGELOG.md) | Released and unreleased behavior |
+
 ## Troubleshooting
 
 ### `plugin id "excalidraw" is reserved`
 
-Your BB release already bundles the official plugin. Install it with:
+Your BB release already bundles the official plugin. Use:
 
 ```bash
 bb plugin install excalidraw --yes
 ```
 
-Do not try to shadow the bundled ID with a Git or local-path installation.
+Do not try to shadow the bundled plugin ID with a Git or local-path copy.
 
-### A file opens as JSON instead of a canvas
+### A file opens as JSON
 
-Choose **Excalidraw** as the default `.excalidraw` opener under **Settings → Files**, then reopen the file.
+Choose **Excalidraw** under **Settings → Files**, then reopen the `.excalidraw` file.
 
-### Build fails resolving `@excalidraw/excalidraw/index.css`
+### Actions says no drawings were found
 
-The Excalidraw package exports different CSS files through production/development conditions. Upgrade BB to a release with the compatible plugin builder, confirm `bb --version`, and retry `bb plugin build .`.
+The launcher only lists existing workspace files. Ask an agent to create a scene with `excalidraw_scene_create`, or use `bb excalidraw create`, then reopen the action.
+
+### The agent cannot see the Excalidraw skill or tools
+
+Verify that:
+
+- `bb plugin list` reports `excalidraw` as running;
+- the thread uses a workspace-backed environment;
+- the plugin has been reloaded after installation.
+
+The plugin deliberately supplies no workspace tools when the agent environment has no workspace path.
 
 ### Apply returns a conflict
 
-Another writer changed the scene after your read. Read the scene again, plan against the new summary, and apply using the new SHA-256 revision. The plugin intentionally has no force-overwrite path.
+Another writer changed the scene after the last read. Read again, plan against the new summary, and apply using the new revision. There is intentionally no force option.
 
-### The plugin does not appear after installation
+### The canvas is light while BB uses a dark palette
 
-```bash
-bb plugin list
-bb plugin enable excalidraw
-bb plugin reload excalidraw
-```
+Open the canvas menu and choose the moon for explicit dark mode, or the monitor to follow BB/system light-dark mode. BB palette selection and BB light-dark mode are separate settings.
 
-Then inspect the BB server log for build or compatibility errors.
+### Build cannot resolve Excalidraw CSS or fonts
+
+Upgrade to a compatible BB plugin builder, confirm `bb --version`, and retry `bb plugin build .`. The repository vendors the resolved production CSS and inlined fonts for source-install compatibility.
 
 ### Browser tests cannot find Chromium
 
@@ -316,50 +544,27 @@ npm run test:browser
 
 ## Limitations
 
-- This is not CRDT collaboration: there are no multiplayer cursors or automatic merge semantics.
-- The plugin opens `.excalidraw` scenes, not arbitrary JSON, SVG, PNG, or JPEG files.
-- Agent and CLI operations are semantic and bounded; they do not expose arbitrary raw scene editing.
-- Image bodies stay in the workspace file and are not returned to models.
-- Git-source installation needs Node.js, Git, npm, and a compatible BB plugin builder.
-- `@excalidraw/excalidraw` is pinned to 0.18.1. Its Mermaid dependency graph currently carries transitive advisories described in [`SECURITY.md`](./SECURITY.md).
+- This is realtime invalidation with conflict protection, not multiplayer CRDT collaboration.
+- The file opener handles `.excalidraw` scenes, not arbitrary JSON, SVG, PNG, or JPEG files.
+- Semantic operations expose supported diagram primitives, not arbitrary native Excalidraw fields.
+- Images are preserved, but image bodies are not returned to agents or CLI consumers.
+- The launcher discovers existing drawings; scene creation belongs to the agent tools or CLI.
+- Git-source installation requires Node.js, Git, npm, and a compatible BB plugin builder.
+- `@excalidraw/excalidraw` is pinned to 0.18.1. Its transitive Mermaid dependency advisories are documented in [`SECURITY.md`](./SECURITY.md).
 
-## FAQ
+## Skill provenance
 
-### Why not edit the JSON directly?
+The BB-native skill independently adapts general diagram-design ideas evaluated from `coleam00/excalidraw-diagram-skill`. That repository had no license when reviewed, so its prose, templates, renderer, and code were not copied.
 
-Direct JSON replacement bypasses semantic validation, scene preservation rules, response limits, and compare-and-swap conflict handling.
-
-### Does the plugin upload drawings to an external service?
-
-No. Workspace files remain canonical and are accessed through BB's workspace APIs. The plugin itself does not add an external storage service.
-
-### Can an agent overwrite a newer human edit?
-
-Not silently. Apply requires the revision returned by a previous read. If the revision is stale, the operation returns a conflict and does not write.
-
-### Does realtime invalidation merge two dirty documents?
-
-No. Clean documents reload after a foreign write. A dirty document keeps its local draft and enters a visible conflict state.
-
-### Why is the Plugin SDK vendored?
-
-Only to reproduce the SDK runtime and declarations used by standalone tests and typechecking. BB supplies the real SDK at runtime.
-
-### Why is the package marked private if the GitHub repository is public?
-
-`private: true` prevents accidental npm publication. The supported external installation source is Git.
-
-### Can I install this over BB's bundled Excalidraw plugin?
-
-No. Bundled official plugin IDs are reserved. Use the bundled copy supplied by that BB release.
+This integration uses BB semantic tools and the live canvas instead of raw JSON, Python rendering, or Playwright-driven scene generation. See [`docs/excalidraw-diagram-skill-integration.md`](./docs/excalidraw-diagram-skill-integration.md) for details.
 
 ## Security
 
-This plugin runs as full-trust code inside the BB server process. Install only source and tags you trust. See [`SECURITY.md`](./SECURITY.md) for the authority model, vulnerability reporting, and current dependency-advisory status.
+This plugin runs as full-trust code inside the BB server process. Install only source and tags you trust. Report suspected vulnerabilities privately as described in [`SECURITY.md`](./SECURITY.md); do not attach real workspace scenes, tokens, or credentials.
 
 ## Contributing
 
-Bug reports and focused pull requests are welcome. Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before proposing changes, and preserve the workspace-authority, compare-and-swap, and model-output safety boundaries.
+Bug reports and focused pull requests are welcome. Read [`CONTRIBUTING.md`](./CONTRIBUTING.md), and preserve the workspace-authority, compare-and-swap, bounded-output, and no-raw-JSON boundaries.
 
 ## License and attribution
 
@@ -368,5 +573,3 @@ MIT licensed. See:
 - [`LICENSE`](./LICENSE)
 - [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)
 - [`scene-adapter.ATTRIBUTION.md`](./scene-adapter.ATTRIBUTION.md)
-
-The repository vendors BB Plugin SDK files for standalone development and includes the complete applicable MIT notice.
