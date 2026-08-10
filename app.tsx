@@ -1,4 +1,8 @@
-import { Excalidraw } from "@excalidraw/excalidraw";
+import {
+	CaptureUpdateAction,
+	Excalidraw,
+} from "@excalidraw/excalidraw";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import {
 	definePluginApp,
 	useRealtime,
@@ -17,9 +21,10 @@ import {
 	type SceneData,
 } from "./scene-state";
 import {
+	acquireSaveCoordinator,
 	createSaveCoordinator,
-	getSaveCoordinator,
 	type SaveCoordinator,
+	type SaveCoordinatorLease,
 	type SaveCoordinatorState,
 } from "./save-coordinator";
 import {
@@ -64,7 +69,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 	const mountRef = useRef<HTMLDivElement>(null);
 	const rpc = useRpc<ExcalidrawRpcContract>();
 	const [theme, setTheme] = useState<CanvasTheme>(readHostTheme);
-	const [api, setApi] = useState<{ refresh: () => void } | null>(null);
+	const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
 	const [scene, setScene] = useState<SceneData | null>(null);
 	const [coordinator, setCoordinator] = useState<SaveCoordinator | null>(null);
 	const [coordinatorState, setCoordinatorState] =
@@ -75,6 +80,13 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 	const clientSourceKey = `${source.kind}:${source.threadId ?? ""}:${source.environmentId ?? ""}:${source.projectId ?? ""}`;
 	const loadKey = `${clientSourceKey}:${path}`;
 	const activeCoordinatorRef = useRef<SaveCoordinator | null>(null);
+	const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+	const renderedSceneRef = useRef<SceneData | null>(null);
+	const canvasSerializedRef = useRef<string | null>(null);
+	const programmaticCanvasUpdateRef = useRef<{
+		targetSerialized: string;
+	} | null>(null);
+	const userInteractedSinceProgrammaticUpdateRef = useRef(false);
 	const activeIdentityRef = useRef<{
 		coordinator: SaveCoordinator;
 		sourceKey: string | null;
@@ -83,6 +95,51 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 	const unsubscribeRef = useRef<(() => void) | null>(null);
 	const connectionState = useRealtimeConnectionState();
 	const previousConnectionStateRef = useRef(connectionState);
+
+	const syncSceneToCanvas = useCallback((nextScene: SceneData) => {
+		const currentApi = apiRef.current;
+		if (!currentApi) return;
+		const targetSerialized = serializeScene(nextScene);
+		const currentCanvasScene = {
+			elements: currentApi.getSceneElementsIncludingDeleted(),
+			appState: currentApi.getAppState(),
+			files: currentApi.getFiles(),
+		} satisfies SceneData;
+		if (serializeScene(currentCanvasScene) === targetSerialized) {
+			canvasSerializedRef.current = targetSerialized;
+			programmaticCanvasUpdateRef.current = null;
+			return;
+		}
+
+		programmaticCanvasUpdateRef.current = { targetSerialized };
+		userInteractedSinceProgrammaticUpdateRef.current = false;
+		const initialScene = toExcalidrawInitialScene(nextScene);
+		currentApi.addFiles(Object.values(initialScene.files));
+		currentApi.updateScene({
+			elements: initialScene.elements,
+			appState: { ...currentApi.getAppState(), ...initialScene.appState },
+			captureUpdate: CaptureUpdateAction.NEVER,
+		});
+		currentApi.history.clear();
+		canvasSerializedRef.current = targetSerialized;
+	}, []);
+
+	const handleApi = useCallback(
+		(nextApi: ExcalidrawImperativeAPI | null) => {
+			apiRef.current = nextApi;
+			setApi(nextApi);
+			if (!nextApi) {
+				canvasSerializedRef.current = null;
+				programmaticCanvasUpdateRef.current = null;
+				return;
+			}
+			const desiredScene = renderedSceneRef.current;
+			canvasSerializedRef.current = desiredScene
+				? serializeScene(desiredScene)
+				: null;
+		},
+		[],
+	);
 
 	useRealtime(EXCALIDRAW_INVALIDATION_CHANNEL, (payload) => {
 		const parsed = excalidrawInvalidationPayloadSchema.safeParse(payload);
@@ -132,6 +189,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 
 	useEffect(() => {
 		let cancelled = false;
+		let lease: SaveCoordinatorLease | null = null;
 		setLoadState("loading");
 		setMessage("Loading scene…");
 		setScene(null);
@@ -152,7 +210,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 					return;
 				}
 				const coordinatorKey = `${result.sourceKey ?? clientSourceKey}:${result.path}`;
-				const current = getSaveCoordinator(coordinatorKey, () =>
+				lease = acquireSaveCoordinator(coordinatorKey, () =>
 					createSaveCoordinator({
 						key: coordinatorKey,
 						initialScene: restored.scene,
@@ -180,6 +238,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 						},
 					}),
 				);
+				const current = lease.coordinator;
 				activeCoordinatorRef.current = current;
 				activeIdentityRef.current = {
 					coordinator: current,
@@ -189,12 +248,21 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 				unsubscribeRef.current?.();
 				unsubscribeRef.current = current.subscribe((next) => {
 					if (cancelled) return;
+					renderedSceneRef.current = next.scene;
 					setCoordinatorState(next);
 					setScene(next.scene);
-
-					if (next.message) setMessage(next.message);
+					syncSceneToCanvas(next.scene);
+					setMessage(
+						next.message ??
+							(next.status === "pending"
+								? "Unsaved changes"
+								: next.status === "saving"
+									? "Saving…"
+									: "Ready"),
+					);
 				});
 				setCoordinator(current);
+				renderedSceneRef.current = current.getState().scene;
 				setScene(current.getState().scene);
 				setLoadState("ready");
 				setMessage(current.getState().message ?? "Ready");
@@ -215,22 +283,31 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 			if (activeIdentityRef.current?.coordinator === active) {
 				activeIdentityRef.current = null;
 			}
-			void active?.dispose();
+			renderedSceneRef.current = null;
+			programmaticCanvasUpdateRef.current = null;
+			void lease?.release();
 		};
-	}, [clientSourceKey, loadKey, path]);
+	}, [clientSourceKey, loadKey, path, syncSceneToCanvas]);
 
 	useEffect(() => {
 		const mount = mountRef.current;
 		if (!mount) return;
+		const noteUserInteraction = () => {
+			userInteractedSinceProgrammaticUpdateRef.current = true;
+		};
 		const flushPointerUp = () => {
 			void activeCoordinatorRef.current?.flush("pointerup");
 		};
 		const flushBlur = () => {
 			void activeCoordinatorRef.current?.flush("blur");
 		};
+		mount.addEventListener("pointerdown", noteUserInteraction, true);
+		mount.addEventListener("keydown", noteUserInteraction, true);
 		mount.addEventListener("pointerup", flushPointerUp, true);
 		mount.addEventListener("blur", flushBlur, true);
 		return () => {
+			mount.removeEventListener("pointerdown", noteUserInteraction, true);
+			mount.removeEventListener("keydown", noteUserInteraction, true);
 			mount.removeEventListener("pointerup", flushPointerUp, true);
 			mount.removeEventListener("blur", flushBlur, true);
 		};
@@ -303,6 +380,19 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 				appState: nextAppState,
 				files: nextFiles,
 			} satisfies SceneData;
+			const nextSerialized = serializeScene(nextScene);
+			canvasSerializedRef.current = nextSerialized;
+			const programmaticUpdate = programmaticCanvasUpdateRef.current;
+			if (programmaticUpdate) {
+				if (nextSerialized === programmaticUpdate.targetSerialized) {
+					programmaticCanvasUpdateRef.current = null;
+					userInteractedSinceProgrammaticUpdateRef.current = false;
+					return;
+				}
+				if (!userInteractedSinceProgrammaticUpdateRef.current) return;
+				programmaticCanvasUpdateRef.current = null;
+			}
+			renderedSceneRef.current = nextScene;
 			setScene(nextScene);
 			const currentCoordinator = activeCoordinatorRef.current ?? coordinator;
 			if (currentCoordinator) currentCoordinator.update(nextScene);
@@ -364,7 +454,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 				<Excalidraw
 					autoFocus
 					theme={theme}
-					excalidrawAPI={setApi}
+					excalidrawAPI={handleApi}
 					onChange={handleChange}
 					handleKeyboardGlobally={false}
 					validateEmbeddable={false}

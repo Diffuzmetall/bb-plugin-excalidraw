@@ -1,28 +1,85 @@
 import axe from "axe-core";
-import { act, createElement } from "react";
+import { act, createElement, useCallback } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import type {
+	ExcalidrawImperativeAPI,
+	ExcalidrawProps,
+} from "@excalidraw/excalidraw/types";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 
-const browserSceneContent = JSON.stringify({
-	type: "excalidraw",
-	version: 2,
-	source: "browser-test",
-	elements: [],
-	appState: { viewBackgroundColor: "#fff" },
-	files: {},
-});
-const browserReadSceneResult = {
-	status: "ready" as const,
-	path: "browser.excalidraw",
-	content: browserSceneContent,
-	contentEncoding: "utf8" as const,
-	sizeBytes: browserSceneContent.length,
-	sha256: "browser-sha",
-	writable: true,
-};
+const sourceKey = "workspace:browser-env";
+const initialSha = "a".repeat(64);
+const externalSha = "b".repeat(64);
+const conflictSha = "c".repeat(64);
+
+function createBrowserSceneContent(id: string | null, x = 100): string {
+	return JSON.stringify({
+		type: "excalidraw",
+		version: 2,
+		source: "browser-test",
+		elements:
+			id === null
+				? []
+				: [
+						{
+							id,
+							type: "rectangle",
+							x,
+							y: 100,
+							width: 180,
+							height: 90,
+							strokeColor: "#1971c2",
+							backgroundColor: "#e7f5ff",
+						},
+					],
+		appState: { viewBackgroundColor: "#fff" },
+		files: {},
+	});
+}
+
+function readyScene(content: string, sha256: string) {
+	return {
+		status: "ready" as const,
+		path: "browser.excalidraw",
+		content,
+		contentEncoding: "utf8" as const,
+		sizeBytes: content.length,
+		sha256,
+		sourceKey,
+		writable: true,
+	};
+}
+
+const browserSceneContent = createBrowserSceneContent(null);
+let browserReadSceneResult = readyScene(browserSceneContent, initialSha);
 let readScenePromise: Promise<void>;
 let resolveReadScene: (() => void) | undefined;
+let realtimeHandler: ((payload: object) => void) | null = null;
+let browserApi: ExcalidrawImperativeAPI | null = null;
+const saveSceneCalls: object[] = [];
+
+vi.mock("@excalidraw/excalidraw", async (importOriginal) => {
+	const actual = await importOriginal<
+		typeof import("@excalidraw/excalidraw")
+	>();
+	return {
+		...actual,
+		Excalidraw: (props: ExcalidrawProps) => {
+			const captureApi = useCallback(
+				(api: ExcalidrawImperativeAPI) => {
+					browserApi = api;
+					props.excalidrawAPI?.(api);
+				},
+				[props.excalidrawAPI],
+			);
+			return createElement(actual.Excalidraw, {
+				...props,
+				excalidrawAPI: captureApi,
+			});
+		},
+	};
+});
 
 vi.mock("@bb/plugin-sdk/app", () => {
 	const app = {
@@ -42,21 +99,31 @@ vi.mock("@bb/plugin-sdk/app", () => {
 			register(app);
 			return app;
 		},
-		useRealtime() {},
+		useRealtime(_channel: string, handler: (payload: object) => void) {
+			realtimeHandler = handler;
+		},
 		useRealtimeConnectionState() {
 			return "connected" as const;
 		},
 		useRpc() {
 			return {
-				call: async (method: string) => {
+				call: async (method: string, input: object) => {
 					if (method === "readScene") {
 						await readScenePromise;
 						return browserReadSceneResult;
 					}
+					if (method === "saveScene") {
+						saveSceneCalls.push(input);
+						return {
+							status: "written" as const,
+							sha256: "d".repeat(64),
+							sizeBytes: browserSceneContent.length,
+						};
+					}
 					return {
-						status: "written" as const,
-						sha256: "browser-saved-sha",
-						sizeBytes: browserSceneContent.length,
+						status: "ready" as const,
+						paths: ["browser.excalidraw"],
+						truncated: false,
 					};
 				},
 			};
@@ -69,6 +136,7 @@ vi.mock("@bb/plugin-sdk/app", () => {
 ).IS_REACT_ACT_ENVIRONMENT = true;
 const { ExcalidrawFileOpener, handleLinkOpen, isAllowedExternalLink } =
 	await import("./app");
+const { CaptureUpdateAction } = await import("@excalidraw/excalidraw");
 
 const source = {
 	kind: "workspace" as const,
@@ -76,6 +144,15 @@ const source = {
 	environmentId: "browser-env",
 	projectId: null,
 };
+
+beforeEach(() => {
+	browserReadSceneResult = readyScene(browserSceneContent, initialSha);
+	readScenePromise = Promise.resolve();
+	resolveReadScene = undefined;
+	realtimeHandler = null;
+	browserApi = null;
+	saveSceneCalls.length = 0;
+});
 
 describe("Excalidraw opener Chromium gates", () => {
 	it("renders live canvas, denies embeds, enforces link policy, focus, and scoped axe", async () => {
@@ -232,5 +309,128 @@ describe("Excalidraw opener Chromium gates", () => {
 		container.remove();
 		hostBefore.remove();
 		consoleError.mockRestore();
+	});
+
+	it("applies external scenes to the live canvas without writing stale content", async () => {
+		const sceneAContent = createBrowserSceneContent("scene-a", 100);
+		const sceneBContent = createBrowserSceneContent("scene-b", 420);
+		const sceneCContent = createBrowserSceneContent("scene-c", 760);
+		browserReadSceneResult = readyScene(sceneAContent, initialSha);
+		const container = document.createElement("div");
+		document.body.append(container);
+		const root = createRoot(container);
+		await act(async () => {
+			root.render(
+				createElement(ExcalidrawFileOpener, {
+					path: "browser.excalidraw",
+					source,
+				}),
+			);
+		});
+		await vi.waitFor(() => {
+			expect(
+				browserApi?.getSceneElementsIncludingDeleted()[0]?.id,
+			).toBe("scene-a");
+		});
+		const mount = container.querySelector<HTMLElement>(
+			'[data-testid="excalidraw-plugin-mount"]',
+		);
+		if (!mount || !realtimeHandler) throw new Error("missing mounted editor");
+
+		browserReadSceneResult = readyScene(sceneBContent, externalSha);
+		await act(async () => {
+			realtimeHandler?.({
+				sourceKey,
+				path: "browser.excalidraw",
+				sha256: externalSha,
+				writerNonce: "external-writer",
+			});
+		});
+		await vi.waitFor(() => {
+			expect(
+				browserApi?.getSceneElementsIncludingDeleted()[0]?.id,
+			).toBe("scene-b");
+		});
+		mount.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+		mount.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+		await new Promise((resolve) => setTimeout(resolve, 850));
+		expect(saveSceneCalls).toEqual([]);
+
+		const currentApi = browserApi;
+		if (!currentApi) throw new Error("missing Excalidraw API");
+		const currentElement = currentApi.getSceneElementsIncludingDeleted()[0];
+		if (!currentElement) throw new Error("missing external element");
+		await act(async () => {
+			currentApi.updateScene({
+				elements: [
+					{
+						...currentElement,
+						id: "local-draft",
+						x: 560,
+						version: currentElement.version + 1,
+					},
+				],
+				captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+			});
+		});
+		await vi.waitFor(() => {
+			expect(container.textContent).toContain("Save");
+		});
+
+		browserReadSceneResult = readyScene(sceneCContent, conflictSha);
+		await act(async () => {
+			realtimeHandler?.({
+				sourceKey,
+				path: "browser.excalidraw",
+				sha256: conflictSha,
+				writerNonce: "second-external-writer",
+			});
+		});
+		await vi.waitFor(() => {
+			expect(container.textContent).toContain("Reload");
+		});
+		expect(currentApi.getSceneElementsIncludingDeleted()[0]?.id).toBe(
+			"local-draft",
+		);
+		await new Promise((resolve) => setTimeout(resolve, 850));
+		expect(saveSceneCalls).toEqual([]);
+
+		const reload = Array.from(container.querySelectorAll("button")).find(
+			(button) => button.textContent === "Reload",
+		);
+		if (!reload) throw new Error("missing Reload button");
+		await act(async () => reload.click());
+		await vi.waitFor(() => {
+			expect(
+				browserApi?.getSceneElementsIncludingDeleted()[0]?.id,
+			).toBe("scene-c");
+		});
+		mount.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+		mount.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+		await new Promise((resolve) => setTimeout(resolve, 850));
+		expect(saveSceneCalls).toEqual([]);
+
+		await act(async () => root.unmount());
+		container.remove();
+		browserApi = null;
+		const reopenedContainer = document.createElement("div");
+		document.body.append(reopenedContainer);
+		const reopenedRoot = createRoot(reopenedContainer);
+		await act(async () => {
+			reopenedRoot.render(
+				createElement(ExcalidrawFileOpener, {
+					path: "browser.excalidraw",
+					source,
+				}),
+			);
+		});
+		await vi.waitFor(() => {
+			expect(
+				browserApi?.getSceneElementsIncludingDeleted()[0]?.id,
+			).toBe("scene-c");
+		});
+		expect(saveSceneCalls).toEqual([]);
+		await act(async () => reopenedRoot.unmount());
+		reopenedContainer.remove();
 	});
 });

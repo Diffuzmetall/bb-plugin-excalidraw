@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	acquireSaveCoordinator,
 	clearSaveCoordinator,
 	createSaveCoordinator,
-	getSaveCoordinator,
 	type SaveResult,
 } from "./save-coordinator";
 import type { SceneData } from "./scene-state";
@@ -65,7 +65,7 @@ describe("save coordinator", () => {
 		expect(write).toHaveBeenCalledOnce();
 	});
 
-	it("reuses the module-level coordinator registry", () => {
+	it("reuses a coordinator only while at least one consumer is mounted", async () => {
 		const first = createSaveCoordinator({
 			key: "registry-key",
 			initialScene,
@@ -74,8 +74,8 @@ describe("save coordinator", () => {
 			write: async () => ({ status: "written", sha256: "sha-2" }),
 			read: async () => ({ scene: initialScene, sha256: "sha-2" }),
 		});
-		const reused = getSaveCoordinator("registry-key", () => first);
-		const notCreated = getSaveCoordinator("registry-key", () =>
+		const firstLease = acquireSaveCoordinator("registry-key", () => first);
+		const secondLease = acquireSaveCoordinator("registry-key", () =>
 			createSaveCoordinator({
 				key: "registry-key",
 				initialScene,
@@ -85,8 +85,38 @@ describe("save coordinator", () => {
 				read: async () => ({ scene: initialScene, sha256: "wrong" }),
 			}),
 		);
-		expect(reused).toBe(first);
-		expect(notCreated).toBe(first);
+		expect(firstLease.coordinator).toBe(first);
+		expect(secondLease.coordinator).toBe(first);
+
+		await firstLease.release();
+		const stillShared = acquireSaveCoordinator("registry-key", () =>
+			createSaveCoordinator({
+				key: "registry-key",
+				initialScene,
+				initialSha256: "wrong-again",
+				serialize: (scene) => JSON.stringify(scene),
+				write: async () => ({ status: "written", sha256: "wrong-again" }),
+				read: async () => ({ scene: initialScene, sha256: "wrong-again" }),
+			}),
+		);
+		expect(stillShared.coordinator).toBe(first);
+		await secondLease.release();
+		await stillShared.release();
+
+		const replacement = createSaveCoordinator({
+			key: "registry-key",
+			initialScene,
+			initialSha256: "sha-current",
+			serialize: (scene) => JSON.stringify(scene),
+			write: async () => ({ status: "written", sha256: "sha-current" }),
+			read: async () => ({ scene: initialScene, sha256: "sha-current" }),
+		});
+		const replacementLease = acquireSaveCoordinator(
+			"registry-key",
+			() => replacement,
+		);
+		expect(replacementLease.coordinator).toBe(replacement);
+		await replacementLease.release();
 		clearSaveCoordinator("registry-key");
 	});
 

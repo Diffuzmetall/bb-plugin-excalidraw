@@ -1,9 +1,19 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@bb/plugin-sdk/testing/app";
-import { createElement } from "react";
+import { createElement, useEffect } from "react";
 import { clearSaveCoordinator } from "./save-coordinator";
 import { EXCALIDRAW_INVALIDATION_CHANNEL } from "./realtime-invalidation";
+
+type MockExcalidrawApi = {
+	updateScene: ReturnType<typeof vi.fn>;
+	addFiles: ReturnType<typeof vi.fn>;
+	getSceneElementsIncludingDeleted: () => readonly object[];
+	getAppState: () => object;
+	getFiles: () => object;
+	history: { clear: ReturnType<typeof vi.fn> };
+	refresh: ReturnType<typeof vi.fn>;
+};
 
 const mocks = vi.hoisted(() => ({
 	loadFromBlob: vi.fn(),
@@ -12,41 +22,93 @@ const mocks = vi.hoisted(() => ({
 		| ((elements: readonly object[], appState: object, files: object) => void)
 		| null,
 	validateEmbeddable: null as boolean | null,
-	initialData: null as { elements?: readonly object[] } | null,
+	initialData: null as {
+		elements?: readonly object[];
+		appState?: object;
+		files?: object;
+	} | null,
 	onLinkOpen: null as
 		| ((
 				element: { link?: string | null },
 				event: { preventDefault: () => void },
 		  ) => void)
 		| null,
+	canvasElements: [] as readonly object[],
+	canvasAppState: {} as object,
+	canvasFiles: {} as Record<string, object>,
+	api: null as MockExcalidrawApi | null,
 }));
 
+mocks.api = {
+	updateScene: vi.fn(
+		(data: { elements?: readonly object[]; appState?: object | null }) => {
+			if (data.elements) mocks.canvasElements = data.elements;
+			if (data.appState) mocks.canvasAppState = data.appState;
+			mocks.onChange?.(
+				mocks.canvasElements,
+				mocks.canvasAppState,
+				mocks.canvasFiles,
+			);
+		},
+	),
+	addFiles: vi.fn((nextFiles: Array<{ id: string }>) => {
+		mocks.canvasFiles = {
+			...mocks.canvasFiles,
+			...Object.fromEntries(nextFiles.map((file) => [file.id, file])),
+		};
+		mocks.onChange?.(
+			mocks.canvasElements,
+			mocks.canvasAppState,
+			mocks.canvasFiles,
+		);
+	}),
+	getSceneElementsIncludingDeleted: () => mocks.canvasElements,
+	getAppState: () => mocks.canvasAppState,
+	getFiles: () => mocks.canvasFiles,
+	history: { clear: vi.fn() },
+	refresh: vi.fn(),
+};
+
 vi.mock("@excalidraw/excalidraw", () => ({
+	CaptureUpdateAction: { NEVER: "never" },
 	Excalidraw: (props: {
 		onChange?: typeof mocks.onChange;
 		validateEmbeddable?: boolean;
 		onLinkOpen?: typeof mocks.onLinkOpen;
+		excalidrawAPI?: (api: MockExcalidrawApi | null) => void;
+		initialData?: {
+			elements?: readonly object[];
+			appState?: object;
+			files?: object;
+		};
 	}) => {
 		mocks.onChange = props.onChange ?? null;
 		mocks.validateEmbeddable = props.validateEmbeddable ?? null;
-		mocks.initialData =
-			(
-				props as typeof props & {
-					initialData?: { elements?: readonly object[] };
-				}
-			).initialData ?? null;
+		mocks.initialData = props.initialData ?? null;
 		mocks.onLinkOpen = props.onLinkOpen ?? null;
+		useEffect(() => {
+			mocks.canvasElements = props.initialData?.elements ?? [];
+			mocks.canvasAppState = props.initialData?.appState ?? {};
+			mocks.canvasFiles =
+				(props.initialData?.files as Record<string, object> | undefined) ?? {};
+			props.excalidrawAPI?.(mocks.api);
+			return () => props.excalidrawAPI?.(null);
+		}, []);
 		return createElement(
 			"button",
 			{
 				type: "button",
 				"data-testid": "mock-edit",
-				onClick: () =>
-					props.onChange?.(
-						[{ id: "element-edit", type: "rectangle", x: 20 }],
+				onClick: () => {
+					mocks.canvasElements = [
+						{ id: "element-edit", type: "rectangle", x: 20 },
+					];
+					mocks.onChange?.(
+						mocks.canvasElements,
 						{ viewBackgroundColor: "#fff" },
-						files,
-					),
+						mocks.canvasFiles,
+					);
+				},
 			},
 			"Edit",
 		);
@@ -86,6 +148,12 @@ afterEach(() => {
 	unmountRendered = null;
 	clearSaveCoordinator(coordinatorKey);
 	clearSaveCoordinator(actionCoordinatorKey);
+	mocks.api?.updateScene.mockClear();
+	mocks.api?.addFiles.mockClear();
+	mocks.api?.history.clear.mockClear();
+	mocks.canvasElements = [];
+	mocks.canvasAppState = {};
+	mocks.canvasFiles = {};
 });
 
 type SaveHandler = (input: unknown) => Promise<{
@@ -429,29 +497,30 @@ describe("Excalidraw app registration", () => {
 		expect(readScene).toHaveBeenCalledOnce();
 	});
 
-	it("reloads a clean scene and preserves an exact dirty draft as a conflict", async () => {
+	it("syncs clean external scenes into the canvas and reloads conflicts without stale saves", async () => {
 		const externalScene = {
 			...scene,
 			elements: [{ id: "external", type: "rectangle", x: 50 }],
 		};
 		const externalContent = JSON.stringify(externalScene);
 		const externalSha = "c".repeat(64);
+		const externalRead = {
+			status: "ready" as const,
+			path: "drawing.excalidraw",
+			content: externalContent,
+			contentEncoding: "utf8" as const,
+			sizeBytes: externalContent.length,
+			sha256: externalSha,
+			sourceKey,
+			writable: true,
+		};
 		const readScene = vi
 			.fn<ReadHandler>()
 			.mockResolvedValueOnce(await defaultReadScene())
-			.mockResolvedValueOnce({
-				status: "ready",
-				path: "drawing.excalidraw",
-				content: externalContent,
-				contentEncoding: "utf8",
-				sizeBytes: externalContent.length,
-				sha256: externalSha,
-				sourceKey,
-				writable: true,
-			});
+			.mockResolvedValue(externalRead);
 		mocks.loadFromBlob
 			.mockResolvedValueOnce(scene)
-			.mockResolvedValueOnce(externalScene);
+			.mockResolvedValue(externalScene);
 		mocks.serializeAsJSON.mockImplementation(
 			(nextElements, appState, nextFiles) =>
 				JSON.stringify({ elements: nextElements, appState, files: nextFiles }),
@@ -468,6 +537,7 @@ describe("Excalidraw app registration", () => {
 		);
 		unmountRendered = rendered.unmount;
 		await rendered.findByTestId("mock-edit");
+
 		await rendered.behavior.emitRealtime(EXCALIDRAW_INVALIDATION_CHANNEL, {
 			sourceKey,
 			path: "drawing.excalidraw",
@@ -476,10 +546,20 @@ describe("Excalidraw app registration", () => {
 		});
 		await vi.waitFor(() => expect(readScene).toHaveBeenCalledTimes(2));
 		await vi.waitFor(() =>
-			expect(mocks.initialData?.elements).toEqual(externalScene.elements),
+			expect(mocks.canvasElements).toEqual(externalScene.elements),
 		);
+		expect(mocks.api?.history.clear).toHaveBeenCalled();
+		rendered
+			.getByTestId("excalidraw-plugin-mount")
+			.dispatchEvent(new Event("pointerup", { bubbles: true }));
+		rendered
+			.getByTestId("excalidraw-plugin-mount")
+			.dispatchEvent(new Event("blur", { bubbles: true }));
+		await new Promise((resolve) => setTimeout(resolve, 750));
+		expect(saveScene).not.toHaveBeenCalled();
 
 		const draft = [{ id: "local-draft", type: "rectangle", x: 99 }];
+		mocks.canvasElements = draft;
 		mocks.onChange?.(draft, scene.appState, files);
 		await rendered.behavior.emitRealtime(EXCALIDRAW_INVALIDATION_CHANNEL, {
 			sourceKey,
@@ -489,8 +569,83 @@ describe("Excalidraw app registration", () => {
 		});
 		await rendered.findByRole("button", { name: "Reload" });
 		expect(rendered.queryByRole("button", { name: "Overwrite" })).toBeNull();
-		expect(mocks.initialData?.elements).toEqual(draft);
+		expect(mocks.canvasElements).toEqual(draft);
 		expect(readScene).toHaveBeenCalledTimes(2);
+		expect(saveScene).not.toHaveBeenCalled();
+
+		rendered.getByRole("button", { name: "Reload" }).click();
+		await vi.waitFor(() => expect(readScene).toHaveBeenCalledTimes(3));
+		await vi.waitFor(() =>
+			expect(mocks.canvasElements).toEqual(externalScene.elements),
+		);
+		rendered
+			.getByTestId("excalidraw-plugin-mount")
+			.dispatchEvent(new Event("pointerup", { bubbles: true }));
+		rendered
+			.getByTestId("excalidraw-plugin-mount")
+			.dispatchEvent(new Event("blur", { bubbles: true }));
+		await new Promise((resolve) => setTimeout(resolve, 750));
+		expect(saveScene).not.toHaveBeenCalled();
+	});
+
+	it("reopens from the current file instead of a released cached coordinator", async () => {
+		const externalScene = {
+			...scene,
+			elements: [{ id: "external-reopen", type: "rectangle", x: 70 }],
+		};
+		const externalContent = JSON.stringify(externalScene);
+		const externalSha = "e".repeat(64);
+		const readScene = vi
+			.fn<ReadHandler>()
+			.mockResolvedValueOnce(await defaultReadScene())
+			.mockResolvedValue({
+				status: "ready",
+				path: "drawing.excalidraw",
+				content: externalContent,
+				contentEncoding: "utf8",
+				sizeBytes: externalContent.length,
+				sha256: externalSha,
+				sourceKey,
+				writable: true,
+			});
+		mocks.loadFromBlob
+			.mockResolvedValueOnce(scene)
+			.mockResolvedValue(externalScene);
+		mocks.serializeAsJSON.mockImplementation(
+			(nextElements, appState, nextFiles) =>
+				JSON.stringify({ elements: nextElements, appState, files: nextFiles }),
+		);
+		const saveScene = vi.fn<SaveHandler>(async () => ({
+			status: "written",
+			sha256: savedSha,
+			sizeBytes: externalContent.length,
+		}));
+		const first = renderSlot(
+			app.fileOpeners[0],
+			{ path: "drawing.excalidraw", source },
+			{ rpc: rpcHandlers(saveScene, readScene) },
+		);
+		await first.findByTestId("mock-edit");
+		await first.behavior.emitRealtime(EXCALIDRAW_INVALIDATION_CHANNEL, {
+			sourceKey,
+			path: "drawing.excalidraw",
+			sha256: externalSha,
+			writerNonce: "foreign",
+		});
+		await vi.waitFor(() =>
+			expect(mocks.canvasElements).toEqual(externalScene.elements),
+		);
+		first.unmount();
+
+		const second = renderSlot(
+			app.fileOpeners[0],
+			{ path: "drawing.excalidraw", source },
+			{ rpc: rpcHandlers(saveScene, readScene) },
+		);
+		unmountRendered = second.unmount;
+		await second.findByTestId("mock-edit");
+		await vi.waitFor(() => expect(readScene).toHaveBeenCalledTimes(3));
+		expect(mocks.canvasElements).toEqual(externalScene.elements);
 		expect(saveScene).not.toHaveBeenCalled();
 	});
 

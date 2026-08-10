@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Apply clean external revisions and conflict reloads to the live Excalidraw canvas without stale reverse saves.
+- Release cached save coordinators after their final editor consumer closes.
 - Add an Excalidraw launcher to the thread panel Actions menu.
 - Discover workspace drawings and switch between them from the launcher.
 - Show save status only while loading, dirty, saving, conflicted, or failed.

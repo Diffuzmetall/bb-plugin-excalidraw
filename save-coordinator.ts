@@ -40,7 +40,17 @@ export type ExternalReconciliationResult =
 	| "conflict"
 	| "superseded";
 
-const coordinators = new Map<string, SaveCoordinator>();
+type SaveCoordinatorRegistryEntry = {
+	coordinator: SaveCoordinator;
+	consumers: number;
+};
+
+export type SaveCoordinatorLease = {
+	coordinator: SaveCoordinator;
+	release: () => Promise<SaveResult | null>;
+};
+
+const coordinators = new Map<string, SaveCoordinatorRegistryEntry>();
 
 export function createSaveCoordinator(
 	options: SaveCoordinatorOptions,
@@ -48,15 +58,30 @@ export function createSaveCoordinator(
 	return new SaveCoordinator(options);
 }
 
-export function getSaveCoordinator(
+export function acquireSaveCoordinator(
 	key: string,
 	create: () => SaveCoordinator,
-): SaveCoordinator {
-	const existing = coordinators.get(key);
-	if (existing) return existing;
-	const coordinator = create();
-	coordinators.set(key, coordinator);
-	return coordinator;
+): SaveCoordinatorLease {
+	let entry = coordinators.get(key);
+	if (!entry) {
+		entry = { coordinator: create(), consumers: 0 };
+		coordinators.set(key, entry);
+	}
+	entry.consumers += 1;
+	let released = false;
+	return {
+		coordinator: entry.coordinator,
+		async release() {
+			if (released) return null;
+			released = true;
+			const current = coordinators.get(key);
+			if (!current || current.coordinator !== entry.coordinator) return null;
+			current.consumers -= 1;
+			if (current.consumers > 0) return null;
+			coordinators.delete(key);
+			return current.coordinator.dispose();
+		},
+	};
 }
 
 export function clearSaveCoordinator(key: string): void {
