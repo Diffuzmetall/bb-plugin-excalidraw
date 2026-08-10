@@ -278,7 +278,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 		if (!currentCoordinator) return;
 		const result = await currentCoordinator.flush("shortcut");
 		if (result?.status === "conflict")
-			setMessage("File changed elsewhere; reload or overwrite");
+			setMessage("File changed elsewhere; reload to discard local changes");
 	}, []);
 
 	useEffect(() => {
@@ -321,10 +321,6 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 		await coordinator?.reload();
 		restoreFocus();
 	};
-	const overwrite = async () => {
-		await coordinator?.overwrite();
-		restoreFocus();
-	};
 
 	return (
 		<div
@@ -352,14 +348,9 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 							{isSaving ? "Saving…" : isDirty ? "Save" : "Saved"}
 						</button>
 						{coordinatorState?.status === "conflict" && (
-							<>
-								<button type="button" onClick={() => void reload()}>
-									Reload
-								</button>
-								<button type="button" onClick={() => void overwrite()}>
-									Overwrite
-								</button>
-							</>
+							<button type="button" onClick={() => void reload()}>
+								Reload
+							</button>
 						)}
 					</>
 				)}

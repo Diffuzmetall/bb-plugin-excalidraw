@@ -17,8 +17,7 @@ function setup() {
 	const write = vi.fn<
 		(request: {
 			content: string;
-			expectedSha256: string | null;
-			force: boolean;
+			expectedSha256: string;
 			writerNonce: string;
 		}) => Promise<SaveResult>
 	>(async () => ({ status: "written", sha256: "sha-2" }));
@@ -130,9 +129,9 @@ describe("save coordinator", () => {
 		});
 		await vi.runOnlyPendingTimersAsync();
 		await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(2));
-		expect(write.mock.calls[1]?.[0]).toMatchObject({
+		expect(write.mock.calls[1]?.[0]).toEqual({
+			content: JSON.stringify(newestDraft),
 			expectedSha256: "sha-2",
-			force: false,
 			writerNonce: "writer-1",
 		});
 	});
@@ -158,56 +157,35 @@ describe("save coordinator", () => {
 		});
 	});
 
-	it("reloads cleanly and requires a double-race check before overwrite", async () => {
+	it("resolves a conflict only by explicitly reloading the external scene", async () => {
 		const { coordinator, write, read } = setup();
+		const draft = {
+			...initialScene,
+			elements: [{ id: "element-local", type: "rectangle" }],
+		} satisfies SceneData;
+		const externalScene = {
+			...initialScene,
+			elements: [{ id: "element-external", type: "rectangle" }],
+		} satisfies SceneData;
 		write.mockResolvedValue({
 			status: "conflict",
 			currentSha256: "sha-external",
 		});
-		coordinator.update({
-			...initialScene,
-			elements: [{ id: "element-2", type: "rectangle" }],
-		});
+		coordinator.update(draft);
 		await coordinator.flush("shortcut");
-
-		read.mockResolvedValueOnce({
-			scene: {
-				...initialScene,
-				elements: [{ id: "element-3", type: "rectangle" }],
-			},
-			sha256: "sha-raced",
-		});
-		await expect(coordinator.overwrite()).resolves.toMatchObject({
-			status: "race",
-		});
-		expect(write).toHaveBeenCalledOnce();
-
-		read.mockResolvedValueOnce({ scene: initialScene, sha256: "sha-raced" });
-		write.mockResolvedValueOnce({
-			status: "written",
-			sha256: "sha-overwritten",
-		});
-		await expect(coordinator.overwrite()).resolves.toMatchObject({
-			status: "written",
-		});
-		expect(write).toHaveBeenCalledTimes(2);
-		expect(write.mock.calls[1]?.[0]).toMatchObject({
-			force: true,
-			expectedSha256: null,
-			writerNonce: "writer-1",
+		expect(coordinator.getState()).toMatchObject({
+			status: "conflict",
+			scene: draft,
+			message: "File changed elsewhere; reload to discard local changes",
 		});
 
-		read.mockResolvedValue({
-			scene: {
-				...initialScene,
-				elements: [{ id: "element-4", type: "rectangle" }],
-			},
-			sha256: "sha-reloaded",
-		});
+		read.mockResolvedValue({ scene: externalScene, sha256: "sha-external" });
 		await coordinator.reload();
+		expect(write).toHaveBeenCalledOnce();
 		expect(coordinator.getState()).toMatchObject({
 			status: "clean",
-			sha256: "sha-reloaded",
+			scene: externalScene,
+			sha256: "sha-external",
 		});
 	});
 

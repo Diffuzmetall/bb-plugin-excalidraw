@@ -8,8 +8,7 @@ export type SaveResult =
 
 export type SaveRequest = {
 	content: string;
-	expectedSha256: string | null;
-	force: boolean;
+	expectedSha256: string;
 	writerNonce: string;
 };
 
@@ -143,7 +142,6 @@ export class SaveCoordinator {
 			const result = await this.options.write({
 				content: contentAtStart,
 				expectedSha256: expectedShaAtStart,
-				force: false,
 				writerNonce: this.writerNonce,
 			});
 			if (result.status === "written") {
@@ -167,7 +165,7 @@ export class SaveCoordinator {
 					...this.state,
 					status: "conflict",
 					conflictSha256: result.currentSha256,
-					message: "File changed elsewhere; reload or overwrite",
+					message: "File changed elsewhere; reload to discard local changes",
 				};
 				this.emit();
 				return result;
@@ -235,50 +233,6 @@ export class SaveCoordinator {
 		this.emit();
 	}
 
-	public async overwrite(): Promise<SaveResult | { status: "race" }> {
-		if (this.state.status !== "conflict" || !this.state.conflictSha256) {
-			return { status: "race" };
-		}
-		const current = await this.options.read();
-		if (current.sha256 !== this.state.conflictSha256) {
-			this.state = {
-				...this.state,
-				conflictSha256: current.sha256,
-				message: "File changed again; confirm overwrite",
-			};
-			this.emit();
-			return { status: "race" };
-		}
-		const result = await this.options.write({
-			content: this.options.serialize(this.state.scene),
-			expectedSha256: null,
-			force: true,
-			writerNonce: this.writerNonce,
-		});
-		if (result.status === "written") {
-			this.reconciliationGeneration += 1;
-			this.baseSerialized = this.options.serialize(this.state.scene);
-			this.state = {
-				...this.state,
-				sha256: result.sha256,
-				status: "clean",
-				conflictSha256: null,
-				message: null,
-			};
-		} else if (result.status === "conflict") {
-			this.state = {
-				...this.state,
-				status: "conflict",
-				conflictSha256: result.currentSha256,
-				message: "File changed again; confirm overwrite",
-			};
-		} else {
-			this.state = { ...this.state, status: "error", message: result.message };
-		}
-		this.emit();
-		return result;
-	}
-
 	public async dispose(): Promise<SaveResult | null> {
 		return this.flush("close");
 	}
@@ -293,7 +247,7 @@ export class SaveCoordinator {
 			...this.state,
 			status: "conflict",
 			conflictSha256,
-			message: "File changed elsewhere; reload or overwrite",
+			message: "File changed elsewhere; reload to discard local changes",
 		};
 		this.emit();
 	}

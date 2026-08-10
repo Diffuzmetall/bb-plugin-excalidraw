@@ -15,3 +15,7 @@ SDK when the plugin runs.
 
 The SDK is distributed under the MIT License as part of BB:
 <https://github.com/get-bb/bb>.
+
+The repository root [`LICENSE`](./LICENSE) is the complete upstream BB MIT
+notice, including `Copyright (c) 2026 Michael Yong`, the permission grant, and
+the warranty disclaimer. It applies to the vendored SDK files.

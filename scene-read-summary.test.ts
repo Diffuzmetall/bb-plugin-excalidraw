@@ -41,4 +41,49 @@ describe("scene read summary", () => {
 		expect(summary.truncated).toBe(true);
 		expect(summary.omittedElementCount).toBeGreaterThan(0);
 	});
+
+	it("omits deleted elements and their text from model-facing summaries", () => {
+		const summary = summarizeSceneRead(
+			JSON.stringify({
+				type: "excalidraw",
+				elements: [
+					{
+						id: "deleted-shape",
+						type: "rectangle",
+						isDeleted: true,
+						boundElements: [{ id: "deleted-label", type: "text" }],
+					},
+					{
+						id: "deleted-label",
+						type: "text",
+						isDeleted: true,
+						containerId: "deleted-shape",
+						text: "private deleted text",
+					},
+					{
+						id: "active-shape",
+						type: "rectangle",
+						boundElements: [{ id: "active-label", type: "text" }],
+					},
+					{
+						id: "active-label",
+						type: "text",
+						containerId: "active-shape",
+						text: "visible text",
+					},
+				],
+				appState: {},
+				files: {},
+			}),
+			"a".repeat(64),
+		);
+
+		const serialized = JSON.stringify(summary);
+		expect(serialized).not.toContain("deleted-shape");
+		expect(serialized).not.toContain("deleted-label");
+		expect(serialized).not.toContain("private deleted text");
+		expect(serialized).toContain("visible text");
+		expect(summary.elementCount).toBe(2);
+		expect(summary.elementTypeCounts).toMatchObject({ rectangle: 1, text: 1 });
+	});
 });

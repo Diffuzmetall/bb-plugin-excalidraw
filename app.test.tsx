@@ -437,6 +437,7 @@ describe("Excalidraw app registration", () => {
 			writerNonce: "foreign-2",
 		});
 		await rendered.findByRole("button", { name: "Reload" });
+		expect(rendered.queryByRole("button", { name: "Overwrite" })).toBeNull();
 		expect(mocks.initialData?.elements).toEqual(draft);
 		expect(readScene).toHaveBeenCalledTimes(2);
 		expect(saveScene).not.toHaveBeenCalled();

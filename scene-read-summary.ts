@@ -214,8 +214,12 @@ export function summarizeSceneRead(
 	const scene = record(parsed);
 	const nativeElements =
 		scene !== null && Array.isArray(scene.elements) ? scene.elements : [];
+	const activeElements = nativeElements.filter((rawElement) => {
+		const element = record(rawElement);
+		return element !== null && element.isDeleted !== true;
+	});
 	const textByContainerId = new Map<string, { id: string; text: string }>();
-	for (const rawElement of nativeElements) {
+	for (const rawElement of activeElements) {
 		const element = record(rawElement);
 		if (element === null || element.type !== "text") continue;
 		const containerId = string(element.containerId);
@@ -236,7 +240,7 @@ export function summarizeSceneRead(
 		width: number;
 		height: number;
 	}> = [];
-	for (const rawElement of nativeElements) {
+	for (const rawElement of activeElements) {
 		const element = record(rawElement);
 		if (element === null) continue;
 		const id = elementId(element);
@@ -307,7 +311,7 @@ export function summarizeSceneRead(
 	const summary: SceneReadSummary = {
 		revision,
 		bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-		elementCount: nativeElements.length,
+		elementCount: activeElements.length,
 		elementTypeCounts: counts,
 		elements,
 		connections,
