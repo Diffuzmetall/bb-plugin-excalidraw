@@ -78,12 +78,14 @@ const sourceKey = "workspace:env-1";
 const baseSha = "a".repeat(64);
 const savedSha = "b".repeat(64);
 const coordinatorKey = `${sourceKey}:drawing.excalidraw`;
+const actionCoordinatorKey = `${sourceKey}:AI+MAN.excalidraw`;
 let unmountRendered: (() => void) | null = null;
 
 afterEach(() => {
 	unmountRendered?.();
 	unmountRendered = null;
 	clearSaveCoordinator(coordinatorKey);
+	clearSaveCoordinator(actionCoordinatorKey);
 });
 
 type SaveHandler = (input: unknown) => Promise<{
@@ -103,6 +105,12 @@ type ReadHandler = () => Promise<{
 	writable: boolean;
 }>;
 
+type ListHandler = () => Promise<{
+	status: "ready";
+	paths: string[];
+	truncated: boolean;
+}>;
+
 const defaultReadScene: ReadHandler = async () => ({
 	status: "ready",
 	path: "drawing.excalidraw",
@@ -117,10 +125,16 @@ const defaultReadScene: ReadHandler = async () => ({
 function rpcHandlers(
 	saveScene: SaveHandler,
 	readScene: ReadHandler = defaultReadScene,
+	listScenes: ListHandler = async () => ({
+		status: "ready",
+		paths: ["AI+MAN.excalidraw"],
+		truncated: false,
+	}),
 ) {
 	return {
 		readScene,
 		saveScene: async (input: unknown) => saveScene(input),
+		listScenes,
 		ping: async () => ({ ok: true as const }),
 	};
 }
@@ -142,13 +156,52 @@ describe("Excalidraw app registration", () => {
 		}
 	});
 
-	it("registers only the excalidraw opener", () => {
+	it("registers the Excalidraw launcher and file opener", () => {
+		expect(app.threadPanelActions).toHaveLength(1);
+		expect(app.threadPanelActions[0]).toMatchObject({
+			id: "excalidraw",
+			title: "Excalidraw",
+			layout: "flush",
+		});
 		expect(app.fileOpeners).toHaveLength(1);
 		expect(app.fileOpeners[0]).toMatchObject({
 			id: "excalidraw",
 			title: "Excalidraw",
 			extensions: ["excalidraw"],
 		});
+	});
+
+	it("opens the only workspace drawing from the panel launcher", async () => {
+		mocks.loadFromBlob.mockResolvedValue(scene);
+		mocks.serializeAsJSON.mockReturnValue(serializedScene);
+		const saveScene = vi.fn<SaveHandler>(async () => ({
+			status: "written",
+			sha256: savedSha,
+			sizeBytes: serializedScene.length,
+		}));
+		const readScene = vi.fn<ReadHandler>(async () => ({
+			...(await defaultReadScene()),
+			path: "AI+MAN.excalidraw",
+		}));
+		const listScenes = vi.fn<ListHandler>(async () => ({
+			status: "ready",
+			paths: ["AI+MAN.excalidraw"],
+			truncated: false,
+		}));
+		const rendered = renderSlot(
+			app.threadPanelActions[0],
+			{ threadId: "thread-1", params: null },
+			{ rpc: rpcHandlers(saveScene, readScene, listScenes) },
+		);
+		unmountRendered = rendered.unmount;
+
+		await rendered.findByTestId("mock-edit");
+		expect(listScenes).toHaveBeenCalledOnce();
+		expect(rendered.inspection.rpcCalls[0]).toMatchObject({
+			method: "listScenes",
+			input: { threadId: "thread-1" },
+		});
+		expect(readScene).toHaveBeenCalledOnce();
 	});
 
 	it("loads through the RPC and ignores viewport-only changes", async () => {

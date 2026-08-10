@@ -27,9 +27,13 @@ let resolveReadScene: (() => void) | undefined;
 vi.mock("@bb/plugin-sdk/app", () => {
 	const app = {
 		fileOpeners: [] as Array<Record<string, unknown>>,
+		threadPanelActions: [] as Array<Record<string, unknown>>,
 		slots: {
 			fileOpener(config: Record<string, unknown>) {
 				app.fileOpeners.push(config);
+			},
+			threadPanelAction(config: Record<string, unknown>) {
+				app.threadPanelActions.push(config);
 			},
 		},
 	};

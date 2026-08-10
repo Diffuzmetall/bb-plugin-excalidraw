@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add an Excalidraw launcher to the thread panel Actions menu.
+- Discover workspace drawings and switch between them from the launcher.
+- Render save status as a compact canvas overlay.
+- Bundle Excalidraw CSS and fonts for compatibility with BB source installs.
+
 ## 0.1.0 — 2026-08-10
 
 - Add native `.excalidraw` viewing and editing in BB.

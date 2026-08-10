@@ -24,3 +24,108 @@
 	height: 100%;
 	width: 100%;
 }
+
+.excalidraw-file-status {
+	position: absolute;
+	top: 0.75rem;
+	left: 4.75rem;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	min-height: 2rem;
+	max-width: min(20rem, calc(100% - 9.5rem));
+	border: 1px solid var(--border-seam);
+	border-radius: calc(var(--radius) - 2px);
+	background: color-mix(in oklab, var(--canvas) 88%, transparent);
+	padding: 0.25rem 0.5rem;
+	color: var(--muted-foreground);
+	font-size: 0.75rem;
+	line-height: 1rem;
+	backdrop-filter: blur(8px);
+}
+
+.excalidraw-file-status > span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.excalidraw-file-status button {
+	flex: 0 0 auto;
+	border: 0;
+	border-radius: calc(var(--radius) - 4px);
+	background: var(--surface-raised, var(--canvas));
+	padding: 0.125rem 0.375rem;
+	color: var(--ink);
+	font: inherit;
+}
+
+.excalidraw-file-status button:disabled {
+	color: var(--muted-foreground);
+}
+
+.excalidraw-file-status button:not(:disabled) {
+	cursor: pointer;
+}
+
+.excalidraw-file-status button:not(:disabled):hover {
+	background: var(--surface-hover, var(--canvas));
+}
+
+.excalidraw-action-panel {
+	display: flex;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	flex-direction: column;
+	background: var(--canvas);
+	color: var(--ink);
+}
+
+.excalidraw-action-canvas {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	flex: 1 1 auto;
+}
+
+.excalidraw-action-canvas .excalidraw-plugin {
+	min-height: 0;
+	height: 100%;
+	flex: 1 1 auto;
+}
+
+.excalidraw-scene-picker {
+	display: flex;
+	min-height: 2.25rem;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: 0.5rem;
+	border-bottom: 1px solid var(--border-seam);
+	padding: 0.375rem 0.75rem;
+	font-size: 0.75rem;
+	color: var(--muted-foreground);
+}
+
+.excalidraw-scene-picker select {
+	min-width: 0;
+	max-width: 28rem;
+	flex: 1 1 auto;
+	border: 1px solid var(--input);
+	border-radius: calc(var(--radius) - 2px);
+	background: var(--canvas);
+	padding: 0.25rem 0.5rem;
+	color: var(--ink);
+}
+
+.excalidraw-panel-state {
+	display: grid;
+	height: 100%;
+	min-height: 20rem;
+	place-items: center;
+	padding: 1.5rem;
+	text-align: center;
+	font-size: 0.8125rem;
+	color: var(--muted-foreground);
+}

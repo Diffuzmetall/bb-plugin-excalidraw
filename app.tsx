@@ -5,6 +5,7 @@ import {
 	useRealtimeConnectionState,
 	useRpc,
 	type PluginFileOpenerProps,
+	type PluginThreadPanelProps,
 } from "@bb/plugin-sdk/app";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExcalidrawRpcContract } from "./server";
@@ -27,7 +28,7 @@ import {
 	excalidrawInvalidationPayloadSchema,
 	shouldReconcileAfterReconnect,
 } from "./realtime-invalidation";
-import "@excalidraw/excalidraw/index.css";
+import "./excalidraw.css";
 import "./styles.css";
 
 type CanvasTheme = "light" | "dark";
@@ -379,7 +380,116 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 	);
 }
 
+export function ExcalidrawPanel({ threadId }: PluginThreadPanelProps) {
+	const rpc = useRpc<ExcalidrawRpcContract>();
+	const [paths, setPaths] = useState<string[]>([]);
+	const [selectedPath, setSelectedPath] = useState<string | null>(null);
+	const [loading, setLoading] = useState(true);
+	const [listError, setListError] = useState<string | null>(null);
+	const [truncated, setTruncated] = useState(false);
+
+	useEffect(() => {
+		let cancelled = false;
+		setLoading(true);
+		setListError(null);
+		void rpc
+			.call("listScenes", { threadId })
+			.then((result) => {
+				if (cancelled) return;
+				if (result.status === "error") {
+					setPaths([]);
+					setSelectedPath(null);
+					setListError(result.message);
+					return;
+				}
+				setPaths(result.paths);
+				setTruncated(result.truncated);
+				setSelectedPath((current) =>
+					current && result.paths.includes(current)
+						? current
+						: (result.paths[0] ?? null),
+				);
+			})
+			.catch((cause) => {
+				if (cancelled) return;
+				setListError(
+					cause instanceof Error ? cause.message : "Could not list scenes",
+				);
+			})
+			.finally(() => {
+				if (!cancelled) setLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [rpc, threadId]);
+
+	if (loading) {
+		return (
+			<div className="excalidraw-panel-state" role="status">
+				Loading Excalidraw files…
+			</div>
+		);
+	}
+	if (listError) {
+		return (
+			<div className="excalidraw-panel-state" role="alert">
+				{listError}
+			</div>
+		);
+	}
+	if (!selectedPath) {
+		return (
+			<div className="excalidraw-panel-state" role="status">
+				No .excalidraw files found in this workspace.
+			</div>
+		);
+	}
+
+	const source = {
+		kind: "workspace" as const,
+		threadId,
+		environmentId: null,
+		projectId: null,
+	};
+	return (
+		<div className="excalidraw-action-panel">
+			{paths.length > 1 || truncated ? (
+				<div className="excalidraw-scene-picker">
+					<label htmlFor="excalidraw-scene-path">Drawing</label>
+					<select
+						id="excalidraw-scene-path"
+						value={selectedPath}
+						onChange={(event) => setSelectedPath(event.currentTarget.value)}
+					>
+						{paths.map((scenePath) => (
+							<option key={scenePath} value={scenePath}>
+								{scenePath}
+							</option>
+						))}
+					</select>
+					{truncated ? <span>Results truncated</span> : null}
+				</div>
+			) : null}
+			<div className="excalidraw-action-canvas">
+				<ExcalidrawFileOpener
+					key={selectedPath}
+					path={selectedPath}
+					source={source}
+				/>
+			</div>
+		</div>
+	);
+}
+
 export default definePluginApp((app) => {
+	app.slots.threadPanelAction({
+		id: "excalidraw",
+		title: "Excalidraw",
+		icon: "Edit",
+		layout: "flush",
+		component: ExcalidrawPanel,
+	});
 	app.slots.fileOpener({
 		id: "excalidraw",
 		title: "Excalidraw",

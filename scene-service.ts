@@ -44,6 +44,28 @@ export const sceneAgentReadRequestSchema = z
 	})
 	.strict();
 
+export const sceneListRequestSchema = z
+	.object({
+		threadId: z.string().min(1),
+	})
+	.strict();
+
+export const sceneListResultSchema = z.discriminatedUnion("status", [
+	z
+		.object({
+			status: z.literal("ready"),
+			paths: z.array(z.string()),
+			truncated: z.boolean(),
+		})
+		.strict(),
+	z
+		.object({
+			status: z.literal("error"),
+			message: z.string(),
+		})
+		.strict(),
+]);
+
 export const sceneAgentCreateRequestSchema = sceneAgentReadRequestSchema
 	.extend(semanticCreateRequestSchema.shape)
 	.strict();
@@ -115,6 +137,8 @@ export type SceneSource = z.infer<typeof sceneSourceSchema>;
 export type SceneRequest = z.infer<typeof sceneRequestSchema>;
 export type SaveSceneRequest = z.infer<typeof saveSceneRequestSchema>;
 export type SceneAgentReadRequest = z.infer<typeof sceneAgentReadRequestSchema>;
+export type SceneListRequest = z.infer<typeof sceneListRequestSchema>;
+export type SceneListResult = z.infer<typeof sceneListResultSchema>;
 export type SceneAgentCreateRequest = z.infer<
 	typeof sceneAgentCreateRequestSchema
 >;
@@ -129,6 +153,7 @@ export type SceneWriteResult = z.infer<typeof sceneWriteResultSchema>;
 
 export const MAX_SCENE_BYTES = 20 * 1024 * 1024;
 export const MAX_SCENE_ELEMENTS = 10_000;
+export const MAX_SCENE_LIST_PATHS = 10_000;
 
 interface SceneTarget {
 	kind: "workspace" | "host";
@@ -467,6 +492,41 @@ export function createSceneHandlers(bb: BbPluginApi) {
 		};
 	}
 
+	async function listScenes(input: SceneListRequest): Promise<SceneListResult> {
+		const thread = await bb.sdk.threads.get({ threadId: input.threadId });
+		if (!thread.environmentId) {
+			return { status: "error", message: "This thread has no workspace" };
+		}
+		const environment = await bb.sdk.environments.get({
+			environmentId: thread.environmentId,
+		});
+		if (!environment.hostId || !environment.path) {
+			return {
+				status: "error",
+				message: "This thread has no authoritative workspace",
+			};
+		}
+		const result = await bb.sdk.files.listPaths({
+			hostId: environment.hostId,
+			path: environment.path,
+			includeFiles: true,
+			includeDirectories: false,
+			limit: MAX_SCENE_LIST_PATHS,
+		});
+		return {
+			status: "ready",
+			paths: result.paths
+				.filter(
+					(entry) =>
+						entry.kind === "file" &&
+						path.posix.extname(entry.path).toLowerCase() === ".excalidraw",
+				)
+				.map((entry) => entry.path.replaceAll("\\", "/"))
+				.sort((left, right) => left.localeCompare(right)),
+			truncated: result.truncated,
+		};
+	}
+
 	function workspaceSource(threadId: string): SceneSource {
 		return {
 			kind: "workspace",
@@ -604,6 +664,7 @@ export function createSceneHandlers(bb: BbPluginApi) {
 
 	return {
 		readScene,
+		listScenes,
 		readSemanticScene,
 		createSemanticScene,
 		applySemanticScene,

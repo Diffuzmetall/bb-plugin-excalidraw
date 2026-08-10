@@ -31,6 +31,7 @@ Requirements:
 ## Capabilities
 
 - Native `.excalidraw` canvas inside BB
+- Excalidraw launcher under **New tab → Actions**, with a workspace drawing picker
 - Explicit save with SHA-256 compare-and-swap conflict protection
 - Clean-document reload and dirty-document conflict retention
 - Workspace confinement resolved from the active thread and environment
@@ -71,7 +72,7 @@ npm run test:browser
 bb plugin build .
 ```
 
-The repository vendors the matching BB Plugin SDK 0.4.1 runtime and declarations under `vendor/bb-plugin-sdk` only to keep standalone typechecking and tests reproducible. BB supplies the SDK at plugin runtime.
+The repository vendors the matching BB Plugin SDK 0.4.1 runtime and declarations under `vendor/bb-plugin-sdk` only to keep standalone typechecking and tests reproducible. BB supplies the SDK at plugin runtime. Excalidraw's production stylesheet is checked in with its fonts inlined so Git and path installs also build on older BB source builders; after upgrading Excalidraw, regenerate it with `npm run vendor:css`.
 
 For local path development on a BB build where the `excalidraw` id is not reserved:
 

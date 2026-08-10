@@ -10,6 +10,8 @@ import {
 	sceneAgentCreateRequestSchema,
 	sceneAgentReadRequestSchema,
 	sceneReadResultSchema,
+	sceneListRequestSchema,
+	sceneListResultSchema,
 	sceneRequestSchema,
 	sceneWriteResultSchema,
 } from "./scene-service.js";
@@ -23,6 +25,10 @@ export const excalidrawRpcContract = defineRpcContract({
 		input: saveSceneRequestSchema,
 		output: sceneWriteResultSchema,
 	},
+	listScenes: {
+		input: sceneListRequestSchema,
+		output: sceneListResultSchema,
+	},
 	ping: {
 		input: z.null(),
 		output: z.object({ ok: z.literal(true) }).strict(),
@@ -35,6 +41,7 @@ export default async function plugin(bb: BbPluginApi) {
 	const handlers = createSceneHandlers(bb);
 	const {
 		readScene,
+		listScenes,
 		readSemanticScene,
 		createSemanticScene,
 		applySemanticScene,
@@ -44,6 +51,7 @@ export default async function plugin(bb: BbPluginApi) {
 	bb.rpc.register(excalidrawRpcContract, {
 		readScene,
 		saveScene,
+		listScenes,
 		ping() {
 			return { ok: true as const };
 		},
