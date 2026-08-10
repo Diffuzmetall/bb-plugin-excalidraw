@@ -113,16 +113,20 @@ export default async function plugin(bb: BbPluginApi) {
 			};
 		},
 	});
-	bb.agents.configure((context) => ({
-		tools:
-			context.environment.path === null
-				? []
-				: [
-						"excalidraw_scene_read",
-						"excalidraw_scene_create",
-						"excalidraw_scene_apply",
-					],
-		skills: [],
-	}));
+	bb.agents.configure((context) => {
+		if (context.environment.path === null) {
+			return { tools: [], skills: [] };
+		}
+		return {
+			tools: [
+				"excalidraw_scene_read",
+				"excalidraw_scene_create",
+				"excalidraw_scene_apply",
+			],
+			skills: ["excalidraw"],
+			instructions:
+				"For .excalidraw work, use the Excalidraw semantic tools or bb excalidraw CLI. Read before applying changes, use the returned revision, and never edit native scene JSON directly.",
+		};
+	});
 	bb.log.info("Excalidraw scene RPC and semantic read tool loaded");
 }

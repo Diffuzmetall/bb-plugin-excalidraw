@@ -236,8 +236,11 @@ describe("Excalidraw server", () => {
 		expect(host.harness.inspection.realtimeSignals).toEqual([]);
 	});
 
-	it("selects the tool only for a live workspace environment", async () => {
-		const host = createFakePluginHost({ pluginId: "excalidraw" });
+	it("selects the tools and skill only for a live workspace environment", async () => {
+		const host = createFakePluginHost({
+			pluginId: "excalidraw",
+			agentSkillIds: ["excalidraw"],
+		});
 		await plugin(host.bb);
 		const context = {
 			thread: {
@@ -271,12 +274,16 @@ describe("Excalidraw server", () => {
 			"excalidraw_scene_create",
 			"excalidraw_scene_apply",
 		]);
+		expect(liveConfiguration.skills).toEqual(["excalidraw"]);
+		expect(liveConfiguration.instructions).toContain(
+			"never edit native scene JSON directly",
+		);
 		await expect(
 			host.harness.resolveAgentConfiguration({
 				...context,
 				environment: { ...context.environment, path: null },
 			}),
-		).resolves.toMatchObject({ tools: [] });
+		).resolves.toMatchObject({ tools: [], skills: [] });
 	});
 
 	it("registers scene RPC methods with schema validation", async () => {
