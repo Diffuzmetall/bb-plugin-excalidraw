@@ -53,6 +53,7 @@ const files = {
 };
 const appState = {
 	viewBackgroundColor: "#ffffff",
+	theme: "light",
 	scrollX: 0,
 	scrollY: 0,
 	zoom: { value: 1 },
@@ -91,12 +92,13 @@ describe("scene state", () => {
 		});
 	});
 
-	it("serializes elements, appState, and image files while ignoring viewport-only changes", () => {
+	it("serializes durable scene state while ignoring viewport and UI theme changes", () => {
 		const first = serializeScene(scene);
 		const viewportOnly = {
 			...scene,
 			appState: {
 				...scene.appState,
+				theme: "dark",
 				scrollX: 400,
 				scrollY: -200,
 				zoom: { value: 2 },
@@ -110,7 +112,11 @@ describe("scene state", () => {
 		expect(hasDurableChanges(first, viewportOnly)).toBe(false);
 		expect(serializeAsJSON).toHaveBeenCalledWith(
 			elements,
-			expect.not.objectContaining({ scrollX: 400, scrollY: -200 }),
+			expect.not.objectContaining({
+				theme: "dark",
+				scrollX: 400,
+				scrollY: -200,
+			}),
 			files,
 			"database",
 		);

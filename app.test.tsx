@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@bb/plugin-sdk/testing/app";
-import { createElement, useEffect } from "react";
+import { act, createElement, useEffect, type ReactNode } from "react";
 import { clearSaveCoordinator } from "./save-coordinator";
 import { EXCALIDRAW_INVALIDATION_CHANNEL } from "./realtime-invalidation";
 
@@ -36,6 +36,11 @@ const mocks = vi.hoisted(() => ({
 	canvasElements: [] as readonly object[],
 	canvasAppState: {} as object,
 	canvasFiles: {} as Record<string, object>,
+	theme: null as "light" | "dark" | null,
+	themePreference: null as "light" | "dark" | "system" | null,
+	onThemeSelect: null as
+		| ((theme: "light" | "dark" | "system") => void)
+		| null,
 	api: null as MockExcalidrawApi | null,
 }));
 
@@ -69,53 +74,85 @@ mocks.api = {
 	refresh: vi.fn(),
 };
 
-vi.mock("@excalidraw/excalidraw", () => ({
-	CaptureUpdateAction: { NEVER: "never" },
-	Excalidraw: (props: {
-		onChange?: typeof mocks.onChange;
-		validateEmbeddable?: boolean;
-		onLinkOpen?: typeof mocks.onLinkOpen;
-		excalidrawAPI?: (api: MockExcalidrawApi | null) => void;
-		initialData?: {
-			elements?: readonly object[];
-			appState?: object;
-			files?: object;
-		};
-	}) => {
-		mocks.onChange = props.onChange ?? null;
-		mocks.validateEmbeddable = props.validateEmbeddable ?? null;
-		mocks.initialData = props.initialData ?? null;
-		mocks.onLinkOpen = props.onLinkOpen ?? null;
-		useEffect(() => {
-			mocks.canvasElements = props.initialData?.elements ?? [];
-			mocks.canvasAppState = props.initialData?.appState ?? {};
-			mocks.canvasFiles =
-				(props.initialData?.files as Record<string, object> | undefined) ?? {};
-			props.excalidrawAPI?.(mocks.api);
-			return () => props.excalidrawAPI?.(null);
-		}, []);
-		return createElement(
-			"button",
-			{
-				type: "button",
-				"data-testid": "mock-edit",
-				onClick: () => {
-					mocks.canvasElements = [
-						{ id: "element-edit", type: "rectangle", x: 20 },
-					];
-					mocks.onChange?.(
-						mocks.canvasElements,
-						{ viewBackgroundColor: "#fff" },
-						mocks.canvasFiles,
-					);
-				},
-			},
-			"Edit",
-		);
-	},
-	loadFromBlob: mocks.loadFromBlob,
-	serializeAsJSON: mocks.serializeAsJSON,
-}));
+vi.mock("@excalidraw/excalidraw", () => {
+	const MockMainMenu = ({ children }: { children?: ReactNode }) =>
+		createElement("div", { "data-testid": "mock-main-menu" }, children);
+	MockMainMenu.DefaultItems = {
+		SearchMenu: () => null,
+		Help: () => null,
+		ClearCanvas: () => null,
+		Socials: () => null,
+		ToggleTheme: (props: {
+			theme: "light" | "dark" | "system";
+			onSelect: (theme: "light" | "dark" | "system") => void;
+		}) => {
+			mocks.themePreference = props.theme;
+			mocks.onThemeSelect = props.onSelect;
+			return createElement("div", { "data-testid": "mock-theme-setting" });
+		},
+		ChangeCanvasBackground: () => null,
+	};
+	MockMainMenu.Separator = () => createElement("hr");
+	MockMainMenu.Group = ({ children }: { children?: ReactNode }) =>
+		createElement("div", null, children);
+
+	return {
+		CaptureUpdateAction: { NEVER: "never" },
+		MainMenu: MockMainMenu,
+		Excalidraw: (props: {
+			onChange?: typeof mocks.onChange;
+			validateEmbeddable?: boolean;
+			onLinkOpen?: typeof mocks.onLinkOpen;
+			excalidrawAPI?: (api: MockExcalidrawApi | null) => void;
+			theme?: "light" | "dark";
+			children?: ReactNode;
+			initialData?: {
+				elements?: readonly object[];
+				appState?: object;
+				files?: object;
+			};
+		}) => {
+			mocks.onChange = props.onChange ?? null;
+			mocks.validateEmbeddable = props.validateEmbeddable ?? null;
+			mocks.initialData = props.initialData ?? null;
+			mocks.onLinkOpen = props.onLinkOpen ?? null;
+			mocks.theme = props.theme ?? null;
+			useEffect(() => {
+				mocks.canvasElements = props.initialData?.elements ?? [];
+				mocks.canvasAppState = props.initialData?.appState ?? {};
+				mocks.canvasFiles =
+					(props.initialData?.files as Record<string, object> | undefined) ?? {};
+				props.excalidrawAPI?.(mocks.api);
+				return () => props.excalidrawAPI?.(null);
+			}, []);
+			return createElement(
+				"div",
+				null,
+				createElement(
+					"button",
+					{
+						type: "button",
+						"data-testid": "mock-edit",
+						onClick: () => {
+							mocks.canvasElements = [
+								{ id: "element-edit", type: "rectangle", x: 20 },
+							];
+							mocks.onChange?.(
+								mocks.canvasElements,
+								{ viewBackgroundColor: "#fff" },
+								mocks.canvasFiles,
+							);
+						},
+					},
+					"Edit",
+				),
+				props.children,
+			);
+		},
+		loadFromBlob: mocks.loadFromBlob,
+		serializeAsJSON: mocks.serializeAsJSON,
+	};
+});
 
 const app = await loadPluginApp(() => import("./app"));
 const { isAllowedExternalLink } = await import("./app");
@@ -154,6 +191,11 @@ afterEach(() => {
 	mocks.canvasElements = [];
 	mocks.canvasAppState = {};
 	mocks.canvasFiles = {};
+	mocks.theme = null;
+	mocks.themePreference = null;
+	mocks.onThemeSelect = null;
+	window.localStorage.removeItem("bb.excalidraw.theme");
+	document.documentElement.classList.remove("dark");
 });
 
 type SaveHandler = (input: unknown) => Promise<{
@@ -306,6 +348,38 @@ describe("Excalidraw app registration", () => {
 			files,
 		);
 		expect(rendered.queryByTestId("excalidraw-file-status")).toBeNull();
+		expect(saveScene).not.toHaveBeenCalled();
+	});
+
+	it("offers the original light, dark, and system theme setting", async () => {
+		document.documentElement.classList.add("dark");
+		window.localStorage.setItem("bb.excalidraw.theme", "system");
+		mocks.loadFromBlob.mockResolvedValue(scene);
+		mocks.serializeAsJSON.mockReturnValue(serializedScene);
+		const saveScene = vi.fn<SaveHandler>(async () => ({
+			status: "written",
+			sha256: savedSha,
+			sizeBytes: serializedScene.length,
+		}));
+		const rendered = renderSlot(
+			app.fileOpeners[0],
+			{ path: "drawing.excalidraw", source },
+			{ rpc: rpcHandlers(saveScene) },
+		);
+		unmountRendered = rendered.unmount;
+
+		await rendered.findByTestId("mock-theme-setting");
+		expect(mocks.themePreference).toBe("system");
+		expect(mocks.theme).toBe("dark");
+
+		act(() => mocks.onThemeSelect?.("light"));
+		await vi.waitFor(() => expect(mocks.theme).toBe("light"));
+		expect(window.localStorage.getItem("bb.excalidraw.theme")).toBe("light");
+
+		act(() => mocks.onThemeSelect?.("system"));
+		await vi.waitFor(() => expect(mocks.theme).toBe("dark"));
+		act(() => document.documentElement.classList.remove("dark"));
+		await vi.waitFor(() => expect(mocks.theme).toBe("light"));
 		expect(saveScene).not.toHaveBeenCalled();
 	});
 

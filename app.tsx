@@ -1,6 +1,7 @@
 import {
 	CaptureUpdateAction,
 	Excalidraw,
+	MainMenu,
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import {
@@ -11,7 +12,7 @@ import {
 	type PluginFileOpenerProps,
 	type PluginThreadPanelProps,
 } from "@bb/plugin-sdk/app";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExcalidrawRpcContract } from "./server";
 import {
 	isSaveShortcut,
@@ -37,7 +38,20 @@ import "./excalidraw.css";
 import "./styles.css";
 
 type CanvasTheme = "light" | "dark";
+type CanvasThemePreference = CanvasTheme | "system";
 type LoadState = "loading" | "ready" | "error";
+
+const CANVAS_THEME_PREFERENCE_KEY = "bb.excalidraw.theme";
+const CANVAS_THEME_PREFERENCE_EVENT = "bb:excalidraw-theme-preference";
+const EXCALIDRAW_UI_OPTIONS = {
+	canvasActions: {
+		export: false as const,
+		loadScene: false,
+		saveToActiveFile: false,
+		saveAsImage: false,
+		toggleTheme: true,
+	},
+};
 
 export function isAllowedExternalLink(href: string): boolean {
 	try {
@@ -65,10 +79,36 @@ function readHostTheme(): CanvasTheme {
 		: "light";
 }
 
+function readCanvasThemePreference(): CanvasThemePreference {
+	if (typeof window === "undefined") return "system";
+	try {
+		const stored = window.localStorage.getItem(CANVAS_THEME_PREFERENCE_KEY);
+		return stored === "light" || stored === "dark" || stored === "system"
+			? stored
+			: "system";
+	} catch {
+		return "system";
+	}
+}
+
+function persistCanvasThemePreference(
+	preference: CanvasThemePreference,
+): void {
+	try {
+		window.localStorage.setItem(CANVAS_THEME_PREFERENCE_KEY, preference);
+		window.dispatchEvent(new Event(CANVAS_THEME_PREFERENCE_EVENT));
+	} catch {
+		// The preference remains active for this mounted editor when storage is unavailable.
+	}
+}
+
 export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 	const mountRef = useRef<HTMLDivElement>(null);
 	const rpc = useRpc<ExcalidrawRpcContract>();
-	const [theme, setTheme] = useState<CanvasTheme>(readHostTheme);
+	const [hostTheme, setHostTheme] = useState<CanvasTheme>(readHostTheme);
+	const [themePreference, setThemePreference] =
+		useState<CanvasThemePreference>(readCanvasThemePreference);
+	const theme = themePreference === "system" ? hostTheme : themePreference;
 	const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
 	const [scene, setScene] = useState<SceneData | null>(null);
 	const [coordinator, setCoordinator] = useState<SaveCoordinator | null>(null);
@@ -81,6 +121,8 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 	const loadKey = `${clientSourceKey}:${path}`;
 	const activeCoordinatorRef = useRef<SaveCoordinator | null>(null);
 	const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+	const themeRef = useRef<CanvasTheme>(theme);
+	themeRef.current = theme;
 	const renderedSceneRef = useRef<SceneData | null>(null);
 	const canvasSerializedRef = useRef<string | null>(null);
 	const programmaticCanvasUpdateRef = useRef<{
@@ -117,7 +159,11 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 		currentApi.addFiles(Object.values(initialScene.files));
 		currentApi.updateScene({
 			elements: initialScene.elements,
-			appState: { ...currentApi.getAppState(), ...initialScene.appState },
+			appState: {
+				...currentApi.getAppState(),
+				...initialScene.appState,
+				theme: themeRef.current,
+			},
 			captureUpdate: CaptureUpdateAction.NEVER,
 		});
 		currentApi.history.clear();
@@ -315,10 +361,53 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 
 	useEffect(() => {
 		const root = document.documentElement;
-		const observer = new MutationObserver(() => setTheme(readHostTheme()));
+		const observer = new MutationObserver(() => setHostTheme(readHostTheme()));
 		observer.observe(root, { attributes: true, attributeFilter: ["class"] });
 		return () => observer.disconnect();
 	}, []);
+
+	useEffect(() => {
+		const syncPreference = () =>
+			setThemePreference(readCanvasThemePreference());
+		const syncStoragePreference = (event: StorageEvent) => {
+			if (event.key === CANVAS_THEME_PREFERENCE_KEY) syncPreference();
+		};
+		window.addEventListener(CANVAS_THEME_PREFERENCE_EVENT, syncPreference);
+		window.addEventListener("storage", syncStoragePreference);
+		return () => {
+			window.removeEventListener(CANVAS_THEME_PREFERENCE_EVENT, syncPreference);
+			window.removeEventListener("storage", syncStoragePreference);
+		};
+	}, []);
+
+	const selectThemePreference = useCallback(
+		(preference: CanvasThemePreference) => {
+			setThemePreference(preference);
+			persistCanvasThemePreference(preference);
+		},
+		[],
+	);
+	const mainMenu = useMemo(
+		() => (
+			<MainMenu>
+				<MainMenu.DefaultItems.SearchMenu />
+				<MainMenu.DefaultItems.Help />
+				<MainMenu.DefaultItems.ClearCanvas />
+				<MainMenu.Separator />
+				<MainMenu.Group title="Excalidraw links">
+					<MainMenu.DefaultItems.Socials />
+				</MainMenu.Group>
+				<MainMenu.Separator />
+				<MainMenu.DefaultItems.ToggleTheme
+					allowSystemTheme
+					theme={themePreference}
+					onSelect={selectThemePreference}
+				/>
+				<MainMenu.DefaultItems.ChangeCanvasBackground />
+			</MainMenu>
+		),
+		[selectThemePreference, themePreference],
+	);
 
 	useEffect(() => {
 		const mount = mountRef.current;
@@ -460,15 +549,10 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 					validateEmbeddable={false}
 					onLinkOpen={handleLinkOpen}
 					initialData={toExcalidrawInitialScene(scene)}
-					UIOptions={{
-						canvasActions: {
-							export: false,
-							loadScene: false,
-							saveToActiveFile: false,
-							saveAsImage: false,
-						},
-					}}
-				/>
+					UIOptions={EXCALIDRAW_UI_OPTIONS}
+				>
+					{mainMenu}
+				</Excalidraw>
 			)}
 		</div>
 	);

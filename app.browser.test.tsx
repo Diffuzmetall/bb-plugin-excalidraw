@@ -152,6 +152,8 @@ beforeEach(() => {
 	realtimeHandler = null;
 	browserApi = null;
 	saveSceneCalls.length = 0;
+	window.localStorage.removeItem("bb.excalidraw.theme");
+	document.documentElement.classList.remove("dark");
 });
 
 describe("Excalidraw opener Chromium gates", () => {
@@ -309,6 +311,70 @@ describe("Excalidraw opener Chromium gates", () => {
 		container.remove();
 		hostBefore.remove();
 		consoleError.mockRestore();
+	});
+
+	it("renders the original light, dark, and system theme control", async () => {
+		const container = document.createElement("div");
+		document.body.append(container);
+		const root = createRoot(container);
+		await act(async () => {
+			root.render(
+				createElement(ExcalidrawFileOpener, {
+					path: "browser.excalidraw",
+					source,
+				}),
+			);
+		});
+		await vi.waitFor(() =>
+			expect(container.querySelector("canvas")).not.toBeNull(),
+		);
+		const menuTrigger = container.querySelector<HTMLButtonElement>(
+			".main-menu-trigger",
+		);
+		if (!menuTrigger) throw new Error("missing main menu trigger");
+		await act(async () => menuTrigger.click());
+		await vi.waitFor(() => expect(container.textContent).toContain("Theme"));
+
+		const darkMode = container.querySelector<HTMLElement>(
+			'[aria-label^="Dark mode"]',
+		);
+		const systemMode = container.querySelector<HTMLElement>(
+			'[aria-label="System mode"]',
+		);
+		const lightMode = container.querySelector<HTMLElement>(
+			'[aria-label^="Light mode"]',
+		);
+		expect(lightMode).not.toBeNull();
+		expect(darkMode).not.toBeNull();
+		expect(systemMode).not.toBeNull();
+		if (!darkMode || !systemMode) throw new Error("missing theme choices");
+
+		await act(async () => darkMode.click());
+		await vi.waitFor(() =>
+			expect(container.querySelector(".theme--dark")).not.toBeNull(),
+		);
+		expect(window.localStorage.getItem("bb.excalidraw.theme")).toBe("dark");
+
+		await act(async () =>
+			document.documentElement.classList.add("dark"),
+		);
+		await act(async () => systemMode.click());
+		await vi.waitFor(() =>
+			expect(window.localStorage.getItem("bb.excalidraw.theme")).toBe("system"),
+		);
+		expect(container.querySelector(".theme--dark")).not.toBeNull();
+		await act(async () =>
+			document.documentElement.classList.remove("dark"),
+		);
+		await vi.waitFor(() =>
+			expect(container.querySelector(".theme--dark")).toBeNull(),
+		);
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 750));
+		});
+		expect(saveSceneCalls).toEqual([]);
+		await act(async () => root.unmount());
+		container.remove();
 	});
 
 	it("applies external scenes to the live canvas without writing stale content", async () => {

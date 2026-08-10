@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add Excalidraw's native light, dark, and system theme selector without changing scene files.
 - Apply clean external revisions and conflict reloads to the live Excalidraw canvas without stale reverse saves.
 - Release cached save coordinators after their final editor consumer closes.
 - Add an Excalidraw launcher to the thread panel Actions menu.

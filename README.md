@@ -76,7 +76,7 @@ bb excalidraw apply drawings/system.excalidraw \
 bb excalidraw read drawings/system.excalidraw --thread <thread-id> --json
 ```
 
-To use the canvas, choose **Excalidraw** as the default `.excalidraw` opener under **Settings → Files**, then open a drawing from the BB file browser.
+To use the canvas, choose **Excalidraw** as the default `.excalidraw` opener under **Settings → Files**, then open a drawing from the BB file browser. The canvas menu includes Excalidraw's native **Theme** control: choose light, dark, or system; the preference applies across drawings in this BB client and does not modify scene files.
 
 ## Design principles
 

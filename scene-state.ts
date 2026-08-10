@@ -22,11 +22,18 @@ export interface ExcalidrawInitialScene {
 	files: BinaryFiles;
 }
 
-const viewportStateKeys = new Set(["scrollX", "scrollY", "zoom"]);
+const nonDurableAppStateKeys = new Set([
+	"scrollX",
+	"scrollY",
+	"zoom",
+	"theme",
+]);
 
 function durableAppState(appState: object): SceneAppState {
 	return Object.fromEntries(
-		Object.entries(appState).filter(([key]) => !viewportStateKeys.has(key)),
+		Object.entries(appState).filter(
+			([key]) => !nonDurableAppStateKeys.has(key),
+		),
 	) as SceneAppState;
 }
 
