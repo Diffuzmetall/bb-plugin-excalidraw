@@ -39,6 +39,7 @@ This plugin adds a native Excalidraw canvas to BB and exposes the same workspace
 | Workspace launcher | Start from **New tab → Actions** and choose an existing drawing or create a new one |
 | Revision-safe writes | Every mutation is checked against the revision that was read |
 | Agent automation | Read summaries, create scenes, and apply semantic operations without returning raw image bodies |
+| Diagram-design skill | BB-native guidance for architectures, workflows, timelines, comparisons, and visual explanations |
 | CLI parity | The same read/create/apply workflow is available through `bb excalidraw` |
 | Conflict retention | Clean files reload; dirty local drafts remain visible when an external write conflicts |
 | Workspace confinement | BB resolves the host and workspace from the active thread and environment |
