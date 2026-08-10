@@ -226,23 +226,18 @@ describe("Excalidraw app registration", () => {
 		);
 
 		unmountRendered = rendered.unmount;
-		await rendered.findByTestId("excalidraw-file-status");
+		await rendered.findByTestId("mock-edit");
 		expect(rendered.inspection.rpcCalls[0]?.method).toBe("readScene");
 		expect(mocks.validateEmbeddable).toBe(false);
 		expect(mocks.onLinkOpen).not.toBeNull();
-		expect(
-			rendered.getByTestId("excalidraw-file-status").getAttribute("role"),
-		).toBe("status");
-		expect(
-			rendered.getByTestId("excalidraw-file-status").getAttribute("aria-live"),
-		).toBe("polite");
+		expect(rendered.queryByTestId("excalidraw-file-status")).toBeNull();
 		expect(mocks.onChange).not.toBeNull();
 		mocks.onChange?.(
 			elements,
 			{ viewBackgroundColor: "#fff", scrollX: 400 },
 			files,
 		);
-		await rendered.findByRole("button", { name: "Saved" });
+		expect(rendered.queryByTestId("excalidraw-file-status")).toBeNull();
 		expect(saveScene).not.toHaveBeenCalled();
 	});
 
@@ -268,10 +263,13 @@ describe("Excalidraw app registration", () => {
 			{ rpc: rpcHandlers(saveScene) },
 		);
 		unmountRendered = rendered.unmount;
-		await rendered.findByText("Ready");
+		await rendered.findByTestId("mock-edit");
 		expect(mocks.onChange).not.toBeNull();
 		mocks.onChange?.([{ ...elements[0], x: 20 }], scene.appState, files);
 		await rendered.findByRole("button", { name: "Save" });
+		expect(
+			rendered.getByTestId("excalidraw-file-status").getAttribute("aria-live"),
+		).toBe("polite");
 		document.dispatchEvent(
 			new KeyboardEvent("keydown", { key: "s", metaKey: true, bubbles: true }),
 		);
@@ -307,7 +305,7 @@ describe("Excalidraw app registration", () => {
 			{ rpc: rpcHandlers(saveScene) },
 		);
 		unmountRendered = rendered.unmount;
-		await rendered.findByText("Ready");
+		await rendered.findByTestId("mock-edit");
 		mocks.onChange?.([{ ...elements[0], x: 30 }], scene.appState, files);
 		rendered
 			.getByTestId("excalidraw-plugin-mount")
@@ -346,7 +344,7 @@ describe("Excalidraw app registration", () => {
 			{ path: "drawing.excalidraw", source },
 			{ rpc: rpcHandlers(saveScene) },
 		);
-		await rendered.findByText("Ready");
+		await rendered.findByTestId("mock-edit");
 		const draft = [{ ...elements[0], x: 99 }];
 		mocks.onChange?.(draft, scene.appState, files);
 		rendered.unmount();
@@ -385,7 +383,7 @@ describe("Excalidraw app registration", () => {
 			{ rpc: rpcHandlers(saveScene, readScene) },
 		);
 		unmountRendered = rendered.unmount;
-		await rendered.findByText("Ready");
+		await rendered.findByTestId("mock-edit");
 		mocks.onChange?.([{ ...elements[0], x: 20 }], scene.appState, files);
 		document.dispatchEvent(
 			new KeyboardEvent("keydown", { key: "s", metaKey: true, bubbles: true }),
@@ -469,7 +467,7 @@ describe("Excalidraw app registration", () => {
 			{ rpc: rpcHandlers(saveScene, readScene) },
 		);
 		unmountRendered = rendered.unmount;
-		await rendered.findByText("Ready");
+		await rendered.findByTestId("mock-edit");
 		await rendered.behavior.emitRealtime(EXCALIDRAW_INVALIDATION_CHANNEL, {
 			sourceKey,
 			path: "drawing.excalidraw",
@@ -551,7 +549,7 @@ describe("Excalidraw app registration", () => {
 			},
 		);
 		unmountRendered = rendered.unmount;
-		await rendered.findByText("Ready");
+		await rendered.findByTestId("mock-edit");
 		await rendered.behavior.setRealtimeConnectionState("reconnecting");
 		await rendered.behavior.setRealtimeConnectionState("connected");
 		await vi.waitFor(() => expect(readScene).toHaveBeenCalledTimes(2));

@@ -315,6 +315,8 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 		coordinatorState?.status === "saving" ||
 		coordinatorState?.status === "conflict";
 	const isSaving = coordinatorState?.status === "saving";
+	const showStatus =
+		loadState !== "ready" || coordinatorState?.status !== "clean";
 	const restoreFocus = () => {
 		requestAnimationFrame(() => mountRef.current?.focus());
 	};
@@ -331,31 +333,33 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 			data-embeddables="disabled"
 			tabIndex={-1}
 		>
-			<div
-				className="excalidraw-file-status"
-				data-testid="excalidraw-file-status"
-				role="status"
-				aria-live="polite"
-				aria-atomic="true"
-			>
-				<span>{message}</span>
-				{loadState === "ready" && (
-					<>
-						<button
-							type="button"
-							onClick={() => void save()}
-							disabled={!isDirty || isSaving}
-						>
-							{isSaving ? "Saving…" : isDirty ? "Save" : "Saved"}
-						</button>
-						{coordinatorState?.status === "conflict" && (
-							<button type="button" onClick={() => void reload()}>
-								Reload
+			{showStatus ? (
+				<div
+					className="excalidraw-file-status"
+					data-testid="excalidraw-file-status"
+					role="status"
+					aria-live="polite"
+					aria-atomic="true"
+				>
+					<span>{message}</span>
+					{loadState === "ready" && (
+						<>
+							<button
+								type="button"
+								onClick={() => void save()}
+								disabled={!isDirty || isSaving}
+							>
+								{isSaving ? "Saving…" : isDirty ? "Save" : "Saved"}
 							</button>
-						)}
-					</>
-				)}
-			</div>
+							{coordinatorState?.status === "conflict" && (
+								<button type="button" onClick={() => void reload()}>
+									Reload
+								</button>
+							)}
+						</>
+					)}
+				</div>
+			) : null}
 			{scene && loadState === "ready" && (
 				<Excalidraw
 					autoFocus

@@ -127,9 +127,7 @@ describe("Excalidraw opener Chromium gates", () => {
 		);
 		if (!mount) throw new Error("missing plugin mount");
 		expect(mount.getAttribute("data-embeddables")).toBe("disabled");
-		expect(
-			mount.querySelector('[role="status"]')?.getAttribute("aria-live"),
-		).toBe("polite");
+		expect(mount.querySelector('[role="status"]')).toBeNull();
 		for (const href of [
 			"javascript:alert(1)",
 			"data:text/html,owned",
