@@ -7,6 +7,7 @@
 - Show save status only while loading, dirty, saving, conflicted, or failed.
 - Bundle Excalidraw CSS and fonts for compatibility with BB source installs.
 - Enable the Excalidraw skill and semantic tools for agents in live workspaces.
+- Add BB-native diagram planning, layout, palette, semantic-format, and validation guidance.
 
 ## 0.1.0 — 2026-08-10
 

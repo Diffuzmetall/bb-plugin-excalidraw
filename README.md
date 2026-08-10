@@ -35,6 +35,7 @@ Requirements:
 - Explicit save with SHA-256 compare-and-swap conflict protection
 - Clean-document reload and dirty-document conflict retention
 - Workspace confinement resolved from the active thread and environment
+- BB-native diagram-design skill for architectures, workflows, timelines, comparisons, and visual explanations
 - Semantic agent tools:
   - `excalidraw_scene_read`
   - `excalidraw_scene_create`
