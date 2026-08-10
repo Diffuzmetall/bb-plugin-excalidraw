@@ -1,0 +1,51 @@
+{
+  "name": "@bb/plugin-sdk",
+  "version": "0.4.1",
+  "private": true,
+  "type": "module",
+  "files": ["bundled-types", "dist", "README.md"],
+  "exports": {
+    ".": {
+      "types": "./bundled-types/bb-plugin-sdk.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./app": {
+      "types": "./bundled-types/bb-plugin-sdk-app.d.ts",
+      "import": "./dist/app.js",
+      "default": "./dist/app.js"
+    },
+    "./internal/composer-customization-validation": {
+      "types": "./bundled-types/bb-plugin-sdk-internal-composer-customization-validation.d.ts",
+      "import": "./dist/internal/composer-customization-validation.js",
+      "default": "./dist/internal/composer-customization-validation.js"
+    },
+    "./internal/composer-view": {
+      "types": "./bundled-types/bb-plugin-sdk-internal-composer-view.d.ts",
+      "import": "./dist/internal/composer-view.js",
+      "default": "./dist/internal/composer-view.js"
+    },
+    "./testing": {
+      "types": "./bundled-types/bb-plugin-sdk-testing.d.ts",
+      "import": "./dist/testing/index.js",
+      "default": "./dist/testing/index.js"
+    },
+    "./testing/app": {
+      "types": "./bundled-types/bb-plugin-sdk-testing-app.d.ts",
+      "import": "./dist/testing/app.js",
+      "default": "./dist/testing/app.js"
+    }
+  },
+  "types": "./bundled-types/bb-plugin-sdk.d.ts",
+  "peerDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/react": "^19.0.0",
+    "better-sqlite3": ">=12",
+    "cron-parser": "^5.5.0",
+    "hono": "^4.11.9",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^4.3.6"
+  }
+}

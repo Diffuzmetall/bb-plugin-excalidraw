@@ -1,0 +1,87 @@
+{
+  "name": "bb-plugin-excalidraw",
+  "version": "0.1.0",
+  "description": "View, edit, and safely automate Excalidraw drawings in BB.",
+  "private": true,
+  "license": "MIT",
+  "homepage": "https://github.com/Diffuzmetall/bb-plugin-excalidraw#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Diffuzmetall/bb-plugin-excalidraw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Diffuzmetall/bb-plugin-excalidraw/issues"
+  },
+  "type": "module",
+  "files": [
+    "dist",
+    "app.tsx",
+    "cli.ts",
+    "realtime-invalidation.ts",
+    "save-coordinator.ts",
+    "scene-adapter.ts",
+    "scene-read-summary.ts",
+    "scene-service.ts",
+    "scene-state.ts",
+    "semantic-schema.ts",
+    "server.ts",
+    "styles.css",
+    "styles.d.ts",
+    "branding",
+    "skills",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md",
+    "THIRD_PARTY_NOTICES.md",
+    "scene-adapter.ATTRIBUTION.md"
+  ],
+  "engines": {
+    "bb": ">=0.35.1",
+    "bbPluginSdk": "^0.4.1",
+    "node": ">=22.19.0"
+  },
+  "bb": {
+    "name": "Excalidraw",
+    "description": "Create and edit Excalidraw drawings.",
+    "branding": {
+      "icon": "./branding/icon.svg"
+    },
+    "server": "./server.ts",
+    "app": "./app.tsx",
+    "skills": [
+      "skills"
+    ]
+  },
+  "scripts": {
+    "build": "bb plugin build .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@bb/plugin-sdk": "file:vendor/bb-plugin-sdk",
+    "@testing-library/react": "^16.3.2",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitest/browser-playwright": "4.1.10",
+    "axe-core": "^4.11.1",
+    "better-sqlite3": "12.10.0",
+    "cron-parser": "^5.5.0",
+    "hono": "4.12.34",
+    "jsdom": "^29.0.1",
+    "playwright": "1.62.1",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  }
+}

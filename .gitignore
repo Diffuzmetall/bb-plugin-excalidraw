@@ -1,0 +1,15 @@
+.pi/
+node_modules/
+dist/
+!vendor/bb-plugin-sdk/dist/
+!vendor/bb-plugin-sdk/dist/**
+.turbo/
+.vitest-attachments/
+__screenshots__/
+coverage/
+*.tgz
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
