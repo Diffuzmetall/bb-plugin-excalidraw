@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.1 — 2026-08-15
+
 - Add Excalidraw's native light, dark, and system theme selector without changing scene files.
 - Apply clean external revisions and conflict reloads to the live Excalidraw canvas without stale reverse saves.
 - Release cached save coordinators after their final editor consumer closes.
@@ -11,6 +13,9 @@
 - Bundle Excalidraw CSS and fonts for compatibility with BB source installs.
 - Enable the Excalidraw skill and semantic tools for agents in live workspaces.
 - Add BB-native diagram planning, layout, palette, semantic-format, and validation guidance.
+- Separate the plugin's MIT license from the vendored BB Plugin SDK notice.
+- Verify production-only Git installs with a pinned BB 0.35.1 builder in CI.
+- Document the known transitive Excalidraw dependency advisories and exposure boundary.
 
 ## 0.1.0 — 2026-08-10
 

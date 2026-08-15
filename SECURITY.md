@@ -14,4 +14,15 @@ Scene writes are confined to the workspace resolved by BB from the active thread
 
 ## Dependency advisories
 
-The plugin intentionally pins `@excalidraw/excalidraw` 0.18.1, the current stable release used by this implementation. At the 0.1.0 release, `npm audit --omit=dev` reports transitive advisories in Excalidraw's Mermaid parsing dependency graph, with no patched compatible Excalidraw release available. The plugin does not expose Mermaid parsing as an agent or CLI operation, and external embeddables are disabled, but maintainers should upgrade promptly when Excalidraw publishes a compatible fix.
+The plugin intentionally pins `@excalidraw/excalidraw` 0.18.1, the current
+stable release used by this implementation. At the 0.1.1 release,
+`npm audit --omit=dev` reports two high and seven moderate vulnerabilities in
+the transitive Excalidraw dependency graph. The affected paths run through
+Excalidraw's Mermaid integration to `nanoid`, `lodash-es`, Chevrotain, and
+Langium. npm offers no patched Excalidraw version compatible with 0.18.1; its
+suggested automatic fix is a downgrade to 0.17.6.
+
+This plugin does not expose Mermaid parsing as an agent or CLI operation, and
+external embeddables are disabled. That reduces exposure but does not make the
+advisories disappear. Maintainers should review each upstream Excalidraw
+release and upgrade as soon as a compatible patched version is available.

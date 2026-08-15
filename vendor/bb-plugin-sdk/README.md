@@ -6,4 +6,4 @@ It is used only for standalone development, typechecking, and tests because the 
 
 Upstream source: <https://github.com/get-bb/bb/tree/main/packages/plugin-sdk>
 
-License: MIT. See the repository root [`LICENSE`](../../LICENSE).
+License: MIT. See this vendored package's [`LICENSE`](./LICENSE).
