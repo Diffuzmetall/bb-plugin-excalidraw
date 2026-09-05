@@ -58,10 +58,11 @@
   "scripts": {
     "build": "bb plugin build .",
     "vendor:css": "node scripts/vendor-excalidraw-css.mjs",
+    "check:vendor-css": "node scripts/vendor-excalidraw-css.mjs --check",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:browser": "vitest run --config vitest.browser.config.ts",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run check:vendor-css && npm run typecheck && npm test"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.1",
