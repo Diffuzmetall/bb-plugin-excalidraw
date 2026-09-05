@@ -401,6 +401,58 @@ export function createSceneHandlers(bb: BbPluginApi) {
 		| { error: z.infer<typeof sceneErrorSchema> }
 	> {
 		if (source.kind === "thread-storage") return { error: sourceError(source) };
+		// A project-backed file keeps its project authority even when BB also
+		// supplies the ambient thread. Otherwise the path is resolved against the
+		// thread's unrelated worktree and valid cross-project files return 404.
+		if (source.projectId) {
+			const project = await bb.sdk.projects.get({
+				projectId: source.projectId,
+			});
+			const projectSource =
+				project.sources.find((entry) => entry.isDefault) ?? project.sources[0];
+			if (!projectSource) {
+				return {
+					error: error(
+						"missing_workspace",
+						"This project has no authoritative workspace source",
+					),
+				};
+			}
+			const pathApi =
+				path.win32.isAbsolute(projectSource.path) &&
+				!path.posix.isAbsolute(projectSource.path)
+					? path.win32
+					: path.posix;
+			let projectRelativePath = relativePath;
+			if (!relativePath.includes("/")) {
+				const result = await bb.sdk.projects.paths({
+					projectId: project.id,
+					query: "excalidraw",
+					includeFiles: "true",
+					includeDirectories: "false",
+					limit: String(MAX_SCENE_LIST_PATHS),
+				});
+				const matches = result.paths.filter((entry) => {
+					if (entry.kind !== "file" || !isReadableScenePath(entry.path)) return false;
+					return path.posix.basename(entry.path.replaceAll("\\", "/")) === relativePath;
+				});
+				if (matches.length === 1) {
+					projectRelativePath = matches[0].path.replaceAll("\\", "/");
+				}
+			}
+			return {
+				kind: "project",
+				path: pathApi.join(
+					projectSource.path,
+					projectRelativePath.replaceAll("/", pathApi.sep),
+				),
+				rootPath: projectSource.path,
+				hostId: projectSource.hostId,
+				projectId: project.id,
+				sourceKey: `project:${project.id}:${projectSource.id}`,
+				writable: true,
+			};
+		}
 		const threadEnvironmentId = source.threadId
 			? (await bb.sdk.threads.get({ threadId: source.threadId })).environmentId
 			: null;
@@ -418,38 +470,6 @@ export function createSceneHandlers(bb: BbPluginApi) {
 		}
 		const environmentId = source.environmentId ?? threadEnvironmentId;
 		if (!environmentId) {
-			if (source.projectId) {
-				const project = await bb.sdk.projects.get({
-					projectId: source.projectId,
-				});
-				const projectSource =
-					project.sources.find((entry) => entry.isDefault) ?? project.sources[0];
-				if (!projectSource) {
-					return {
-						error: error(
-							"missing_workspace",
-							"This project has no authoritative workspace source",
-						),
-					};
-				}
-				const pathApi =
-					path.win32.isAbsolute(projectSource.path) &&
-					!path.posix.isAbsolute(projectSource.path)
-						? path.win32
-						: path.posix;
-				return {
-					kind: "project",
-					path: pathApi.join(
-						projectSource.path,
-						relativePath.replaceAll("/", pathApi.sep),
-					),
-					rootPath: projectSource.path,
-					hostId: projectSource.hostId,
-					projectId: project.id,
-					sourceKey: `project:${project.id}:${projectSource.id}`,
-					writable: true,
-				};
-			}
 			return {
 				error: error(
 					"authority_unproven",

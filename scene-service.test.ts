@@ -558,10 +558,10 @@ describe("Excalidraw scene service", () => {
 		});
 	});
 
-	it("reads and saves Obsidian drawings through registered project authority", async () => {
+	it("keeps explicit project authority when an unrelated thread is also present", async () => {
 		const projectSource = {
 			kind: "workspace" as const,
-			threadId: null,
+			threadId: "thread-1",
 			environmentId: null,
 			projectId: "project-1",
 		};
@@ -576,6 +576,10 @@ describe("Excalidraw scene service", () => {
 		const host = createFakePluginHost({
 			pluginId: "excalidraw",
 			sdk: {
+				threads: { get: () => ({ environmentId: "env-unrelated" }) },
+				environments: {
+					get: () => ({ path: "/unrelated", hostId: "host-unrelated" }),
+				},
 				files: {
 					read: () => ({
 						content: obsidianMarkdown,
@@ -585,6 +589,18 @@ describe("Excalidraw scene service", () => {
 					write: () => ({ outcome: "written", sha256: writtenSha }),
 				},
 				projects: {
+					paths: () => ({
+						paths: [
+							{
+								kind: "file",
+								path: "Excalidraw/demo.excalidraw.md",
+								name: "demo.excalidraw.md",
+								score: 0,
+								positions: [],
+							},
+						],
+						truncated: false,
+					}),
 					get: () => ({
 						id: "project-1",
 						kind: "standard",
@@ -611,7 +627,7 @@ describe("Excalidraw scene service", () => {
 		const handlers = createSceneHandlers(host.bb);
 
 		const result = await handlers.readScene({
-			path: "Excalidraw/demo.excalidraw.md",
+			path: "demo.excalidraw.md",
 			source: projectSource,
 		});
 
@@ -624,7 +640,7 @@ describe("Excalidraw scene service", () => {
 		if (result.status !== "ready") throw new Error("expected ready scene");
 		await expect(
 			handlers.saveScene({
-				path: "Excalidraw/demo.excalidraw.md",
+				path: "demo.excalidraw.md",
 				source: projectSource,
 				content: editedScene,
 				expectedSha256: result.sha256,
@@ -636,6 +652,8 @@ describe("Excalidraw scene service", () => {
 			sizeBytes: Buffer.byteLength(editedScene),
 		});
 
+		expect(host.harness.sdk.callsTo("threads.get")).toHaveLength(0);
+		expect(host.harness.sdk.callsTo("environments.get")).toHaveLength(0);
 		expect(host.harness.sdk.callsTo("files.read")[0]?.[0]).toEqual({
 			hostId: "host-1",
 			path: "/vault/Excalidraw/demo.excalidraw.md",
@@ -662,10 +680,10 @@ describe("Excalidraw scene service", () => {
 		});
 	});
 
-	it("uses thread environment authority before project fallback and keeps host sources read-only", async () => {
-		const projectWorkspaceSource = {
+	it("uses thread environment authority for ambient workspace and keeps host sources read-only", async () => {
+		const ambientWorkspaceSource = {
 			...workspaceSource,
-			projectId: "project-1",
+			projectId: null,
 		};
 		const hostSource = {
 			kind: "host" as const,
@@ -693,7 +711,7 @@ describe("Excalidraw scene service", () => {
 		await expect(
 			handlers.readScene({
 				path: "demo.excalidraw",
-				source: projectWorkspaceSource,
+				source: ambientWorkspaceSource,
 			}),
 		).resolves.toMatchObject({
 			status: "ready",
