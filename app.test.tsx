@@ -500,7 +500,7 @@ describe("Excalidraw app registration", () => {
 		const picker = (await rendered.findByRole("searchbox", {
 			name: "Search Excalidraw files",
 		})) as HTMLInputElement;
-		expect(picker.placeholder).toBe("brain — concepts/AI+MAN.excalidraw");
+		expect(picker.placeholder).toBe("AI+MAN.excalidraw");
 		await act(async () => {
 			picker.focus();
 		});

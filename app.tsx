@@ -641,8 +641,8 @@ function ExcalidrawSceneSwitcher({
 				value={query}
 				placeholder={
 					selected
-						? `${selected.projectName} — ${selected.path}`
-						: "Search Excalidraw files"
+						? (selected.path.split("/").at(-1) ?? selected.path)
+						: "Search drawings"
 				}
 				aria-label="Search Excalidraw files"
 				aria-expanded={open}
