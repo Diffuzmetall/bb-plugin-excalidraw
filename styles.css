@@ -129,3 +129,120 @@
 	font-size: 0.8125rem;
 	color: var(--muted-foreground);
 }
+
+.excalidraw-library {
+	display: grid;
+	grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
+	height: calc(100dvh - 48px);
+	min-height: 24rem;
+	background: var(--canvas);
+	color: var(--ink);
+}
+
+.excalidraw-library-sidebar {
+	display: flex;
+	min-height: 0;
+	flex-direction: column;
+	gap: 0.625rem;
+	border-right: 1px solid var(--border-seam);
+	padding: 0.75rem;
+}
+
+.excalidraw-library-heading {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1rem;
+}
+
+.excalidraw-library-heading span,
+.excalidraw-library-notice,
+.excalidraw-library-empty {
+	color: var(--muted-foreground);
+	font-size: 0.75rem;
+}
+
+.excalidraw-library-sidebar input {
+	width: 100%;
+	border: 1px solid var(--input);
+	border-radius: calc(var(--radius) - 2px);
+	background: var(--canvas);
+	padding: 0.45rem 0.625rem;
+	color: var(--ink);
+}
+
+.excalidraw-library-notice {
+	margin: 0;
+}
+
+.excalidraw-library-empty {
+	padding: 0.75rem 0.25rem;
+}
+
+.excalidraw-library-list {
+	display: flex;
+	min-height: 0;
+	flex: 1 1 auto;
+	flex-direction: column;
+	gap: 0.25rem;
+	overflow: auto;
+}
+
+.excalidraw-library-list button {
+	display: flex;
+	width: 100%;
+	flex-direction: column;
+	gap: 0.125rem;
+	border: 0;
+	border-radius: calc(var(--radius) - 2px);
+	background: transparent;
+	padding: 0.5rem 0.625rem;
+	color: var(--ink);
+	text-align: left;
+	cursor: pointer;
+}
+
+.excalidraw-library-list button:hover,
+.excalidraw-library-list button.is-active {
+	background: var(--surface-hover, color-mix(in oklab, var(--ink) 8%, transparent));
+}
+
+.excalidraw-library-list button:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
+}
+
+.excalidraw-library-list span,
+.excalidraw-library-list small {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.excalidraw-library-list small {
+	color: var(--muted-foreground);
+}
+
+.excalidraw-library-canvas {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+}
+
+.excalidraw-library-canvas .excalidraw-plugin {
+	height: 100%;
+	min-height: 0;
+	flex: 1 1 auto;
+}
+
+@media (max-width: 720px) {
+	.excalidraw-library {
+		grid-template-columns: 1fr;
+		grid-template-rows: minmax(10rem, 32dvh) minmax(20rem, 1fr);
+	}
+
+	.excalidraw-library-sidebar {
+		border-right: 0;
+		border-bottom: 1px solid var(--border-seam);
+	}
+}

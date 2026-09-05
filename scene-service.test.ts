@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { createFakePluginHost } from "@bb/plugin-sdk/testing";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 
+import { decodeObsidianExcalidrawMarkdown } from "./obsidian-scene";
 import { createSceneHandlers } from "./scene-service";
 
 const workspaceSource = {
@@ -474,10 +476,195 @@ describe("Excalidraw scene service", () => {
 		expect(host.harness.sdk.callsTo("files.write")).toHaveLength(0);
 	});
 
-	it("keeps project and host sources read-only", async () => {
+	it("lists native and Obsidian drawings across registered project workspaces", async () => {
+		const host = createFakePluginHost({
+			pluginId: "excalidraw",
+			sdk: {
+				projects: {
+					list: (args) =>
+						args?.includePersonal
+							? [
+									{
+										id: "project-brain",
+										kind: "personal",
+										name: "brain",
+										gitRemoteUrl: null,
+										createdAt: 1,
+										updatedAt: 1,
+										sources: [
+											{
+												id: "source-brain",
+												projectId: "project-brain",
+												isDefault: true,
+												createdAt: 1,
+												updatedAt: 1,
+												type: "local_path",
+												hostId: "host-1",
+												path: "/home/ubuntu/brain",
+											},
+										],
+									},
+								]
+							: [],
+					paths: () => ({
+						paths: [
+							{
+								kind: "file",
+								path: "concept.excalidraw",
+								name: "concept.excalidraw",
+								score: 0,
+								positions: [],
+							},
+							{
+								kind: "file",
+								path: "vault.excalidraw.md",
+								name: "vault.excalidraw.md",
+								score: 0,
+								positions: [],
+							},
+							{
+								kind: "file",
+								path: "README.md",
+								name: "README.md",
+								score: 0,
+								positions: [],
+							},
+						],
+						truncated: false,
+					}),
+				},
+			},
+		});
+		const handlers = createSceneHandlers(host.bb);
+
+		await expect(handlers.listProjectScenes()).resolves.toEqual({
+			status: "ready",
+			entries: [
+				{
+					projectId: "project-brain",
+					projectName: "brain",
+					path: "concept.excalidraw",
+					format: "native",
+				},
+				{
+					projectId: "project-brain",
+					projectName: "brain",
+					path: "vault.excalidraw.md",
+					format: "obsidian-markdown",
+				},
+			],
+			truncatedProjects: [],
+			unavailableProjects: [],
+		});
+	});
+
+	it("reads and saves Obsidian drawings through registered project authority", async () => {
 		const projectSource = {
-			...workspaceSource,
+			kind: "workspace" as const,
+			threadId: null,
 			environmentId: null,
+			projectId: "project-1",
+		};
+		const obsidianMarkdown = `---\nexcalidraw-plugin: parsed\n---\n# Text Elements\nKeep this text\n# Drawing\n\`\`\`json\n${validScene}\n\`\`\``;
+		const editedScene = JSON.stringify({
+			...JSON.parse(validScene),
+			source: "saved-from-bb",
+		});
+		const rawMarkdownSha = createHash("sha256")
+			.update(obsidianMarkdown, "utf8")
+			.digest("hex");
+		const host = createFakePluginHost({
+			pluginId: "excalidraw",
+			sdk: {
+				files: {
+					read: () => ({
+						content: obsidianMarkdown,
+						contentEncoding: "utf8",
+						sizeBytes: Buffer.byteLength(obsidianMarkdown),
+					}),
+					write: () => ({ outcome: "written", sha256: writtenSha }),
+				},
+				projects: {
+					get: () => ({
+						id: "project-1",
+						kind: "standard",
+						name: "Obsidian Vault",
+						gitRemoteUrl: null,
+						createdAt: 1,
+						updatedAt: 1,
+						sources: [
+							{
+								id: "source-1",
+								projectId: "project-1",
+								isDefault: true,
+								createdAt: 1,
+								updatedAt: 1,
+								type: "local_path",
+								hostId: "host-1",
+								path: "/vault",
+							},
+						],
+					}),
+				},
+			},
+		});
+		const handlers = createSceneHandlers(host.bb);
+
+		const result = await handlers.readScene({
+			path: "Excalidraw/demo.excalidraw.md",
+			source: projectSource,
+		});
+
+		expect(result).toMatchObject({
+			status: "ready",
+			writable: true,
+			sha256: rawMarkdownSha,
+			sourceKey: "project:project-1:source-1",
+		});
+		if (result.status !== "ready") throw new Error("expected ready scene");
+		await expect(
+			handlers.saveScene({
+				path: "Excalidraw/demo.excalidraw.md",
+				source: projectSource,
+				content: editedScene,
+				expectedSha256: result.sha256,
+				writerNonce: "writer-test",
+			}),
+		).resolves.toEqual({
+			status: "written",
+			sha256: writtenSha,
+			sizeBytes: Buffer.byteLength(editedScene),
+		});
+
+		expect(host.harness.sdk.callsTo("files.read")[0]?.[0]).toEqual({
+			hostId: "host-1",
+			path: "/vault/Excalidraw/demo.excalidraw.md",
+			rootPath: "/vault",
+		});
+		const write = host.harness.sdk.callsTo("files.write")[0]?.[0] as
+			| {
+					content?: string;
+					expectedSha256?: string | null;
+					hostId?: string;
+					path?: string;
+					rootPath?: string;
+			  }
+			| undefined;
+		expect(write).toMatchObject({
+			hostId: "host-1",
+			path: "/vault/Excalidraw/demo.excalidraw.md",
+			rootPath: "/vault",
+			expectedSha256: rawMarkdownSha,
+		});
+		expect(write?.content).toContain("# Text Elements\nKeep this text");
+		expect(JSON.parse(decodeObsidianExcalidrawMarkdown(write?.content ?? ""))).toMatchObject({
+			source: "saved-from-bb",
+		});
+	});
+
+	it("uses thread environment authority before project fallback and keeps host sources read-only", async () => {
+		const projectWorkspaceSource = {
+			...workspaceSource,
 			projectId: "project-1",
 		};
 		const hostSource = {
@@ -499,31 +686,29 @@ describe("Excalidraw scene service", () => {
 						sha256: "host-read-sha",
 					}),
 				},
-				projects: {
-					fileContent: () => ({
-						content: validScene,
-						contentEncoding: "utf8",
-						sizeBytes: Buffer.byteLength(validScene),
-						mimeType: "application/json",
-					}),
-				},
 			},
 		});
 		const handlers = createSceneHandlers(host.bb);
 
 		await expect(
-			handlers.readScene({ path: "demo.excalidraw", source: projectSource }),
-		).resolves.toMatchObject({ status: "ready", writable: false });
+			handlers.readScene({
+				path: "demo.excalidraw",
+				source: projectWorkspaceSource,
+			}),
+		).resolves.toMatchObject({
+			status: "ready",
+			writable: true,
+			sourceKey: "workspace:env-1",
+		});
 		await expect(
 			handlers.readScene({
 				path: "/workspace/host/demo.excalidraw",
 				source: hostSource,
 			}),
-		).resolves.toMatchObject({ status: "ready", sha256: "host-read-sha" });
-		expect(host.harness.sdk.callsTo("files.read")[0]?.[0]).toEqual({
-			hostId: "host-2",
-			path: "/workspace/host/demo.excalidraw",
-			rootPath: "/workspace",
+		).resolves.toMatchObject({
+			status: "ready",
+			writable: false,
+			sha256: "host-read-sha",
 		});
 		await expect(
 			handlers.saveScene({

@@ -22,6 +22,7 @@
     "scene-adapter.ts",
     "scene-read-summary.ts",
     "scene-service.ts",
+    "obsidian-scene.ts",
     "scene-state.ts",
     "semantic-schema.ts",
     "server.ts",
@@ -64,12 +65,13 @@
   },
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.1",
+    "lz-string": "1.5.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "zod": "4.3.6"
   },
   "devDependencies": {
-    "@bb/plugin-sdk": "file:vendor/bb-plugin-sdk",
+    "@get-bb/plugin-sdk": "0.4.34",
     "@testing-library/react": "^16.3.2",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",

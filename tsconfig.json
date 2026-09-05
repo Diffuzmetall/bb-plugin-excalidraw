@@ -7,12 +7,8 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM"],
     "types": ["node"],
-    "paths": {
-      "@bb/plugin-sdk": ["./vendor/bb-plugin-sdk/bundled-types/bb-plugin-sdk.d.ts"],
-      "@bb/plugin-sdk/app": ["./vendor/bb-plugin-sdk/bundled-types/bb-plugin-sdk-app.d.ts"]
-    },
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["*.ts", "*.tsx", "vendor/bb-plugin-sdk/bundled-types", "skills"]
+  "include": ["*.ts", "*.tsx", "skills"]
 }

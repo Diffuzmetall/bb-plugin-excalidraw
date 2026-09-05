@@ -1,6 +1,6 @@
 import path from "node:path";
 import { createHash } from "node:crypto";
-import type { BbPluginApi } from "@bb/plugin-sdk";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 import {
@@ -21,6 +21,10 @@ import {
 	excalidrawInvalidationPayloadSchema,
 	workspaceSourceKey,
 } from "./realtime-invalidation.js";
+import {
+	decodeObsidianExcalidrawMarkdown,
+	encodeObsidianExcalidrawMarkdown,
+} from "./obsidian-scene.js";
 
 export const sceneSourceSchema = z
 	.object({
@@ -65,6 +69,26 @@ export const sceneListResultSchema = z.discriminatedUnion("status", [
 		})
 		.strict(),
 ]);
+
+export const projectSceneListRequestSchema = z.object({}).strict();
+
+export const projectSceneEntrySchema = z
+	.object({
+		projectId: z.string(),
+		projectName: z.string(),
+		path: z.string(),
+		format: z.enum(["native", "obsidian-markdown"]),
+	})
+	.strict();
+
+export const projectSceneListResultSchema = z
+	.object({
+		status: z.literal("ready"),
+		entries: z.array(projectSceneEntrySchema),
+		truncatedProjects: z.array(z.string()),
+		unavailableProjects: z.array(z.string()),
+	})
+	.strict();
 
 export const sceneAgentCreateRequestSchema = sceneAgentReadRequestSchema
 	.extend(semanticCreateRequestSchema.shape)
@@ -139,6 +163,8 @@ export type SaveSceneRequest = z.infer<typeof saveSceneRequestSchema>;
 export type SceneAgentReadRequest = z.infer<typeof sceneAgentReadRequestSchema>;
 export type SceneListRequest = z.infer<typeof sceneListRequestSchema>;
 export type SceneListResult = z.infer<typeof sceneListResultSchema>;
+export type ProjectSceneEntry = z.infer<typeof projectSceneEntrySchema>;
+export type ProjectSceneListResult = z.infer<typeof projectSceneListResultSchema>;
 export type SceneAgentCreateRequest = z.infer<
 	typeof sceneAgentCreateRequestSchema
 >;
@@ -167,9 +193,11 @@ interface SceneTarget {
 interface SceneProjectTarget {
 	kind: "project";
 	path: string;
+	rootPath: string;
+	hostId: string;
 	projectId: string;
-	environmentId?: string;
-	writable: false;
+	sourceKey: string;
+	writable: true;
 }
 
 function error(
@@ -199,21 +227,36 @@ function normalizeRelativePath(value: string): string | null {
 	return normalized;
 }
 
+function isNativeScenePath(value: string): boolean {
+	return value.toLowerCase().endsWith(".excalidraw");
+}
+
+function isObsidianScenePath(value: string): boolean {
+	return value.toLowerCase().endsWith(".excalidraw.md");
+}
+
+function isReadableScenePath(value: string): boolean {
+	return isNativeScenePath(value) || isObsidianScenePath(value);
+}
+
 function validateScenePath(
 	value: string,
+	allowObsidian = false,
 ):
 	| { ok: true; path: string }
 	| { ok: false; result: z.infer<typeof sceneErrorSchema> } {
 	const normalized = normalizeRelativePath(value);
 	if (
 		!normalized ||
-		path.posix.extname(normalized).toLowerCase() !== ".excalidraw"
+		!(allowObsidian ? isReadableScenePath(normalized) : isNativeScenePath(normalized))
 	) {
 		return {
 			ok: false,
 			result: error(
 				"invalid_path",
-				"Scene paths must be confined relative .excalidraw paths",
+				allowObsidian
+					? "Scene paths must be confined relative .excalidraw or .excalidraw.md paths"
+					: "Scene paths must be confined relative .excalidraw paths",
 			),
 		};
 	}
@@ -292,23 +335,56 @@ export function resolveScenePath(
 	return validateScenePath(value);
 }
 
-function validateSourcePath(source: SceneSource, value: string) {
+function validateSourcePath(
+	source: SceneSource,
+	value: string,
+	allowObsidian = false,
+) {
 	if (source.kind === "host") {
 		if (
 			(!path.posix.isAbsolute(value) && !path.win32.isAbsolute(value)) ||
-			path.posix.extname(value).toLowerCase() !== ".excalidraw"
+			!(allowObsidian ? isReadableScenePath(value) : isNativeScenePath(value))
 		) {
 			return {
 				ok: false as const,
 				result: error(
 					"invalid_path",
-					"Host scene paths must be absolute .excalidraw paths",
+					allowObsidian
+						? "Host scene paths must be absolute .excalidraw or .excalidraw.md paths"
+						: "Host scene paths must be absolute .excalidraw paths",
 				),
 			};
 		}
 		return { ok: true as const, path: value };
 	}
-	return validateScenePath(value);
+	return validateScenePath(value, allowObsidian);
+}
+
+function decodeStoredScene(
+	filePath: string,
+	content: string,
+):
+	| { ok: true; content: string; sizeBytes: number; sha256: string }
+	| { ok: false; result: z.infer<typeof sceneErrorSchema> } {
+	let decoded = content;
+	if (isObsidianScenePath(filePath)) {
+		try {
+			decoded = decodeObsidianExcalidrawMarkdown(content);
+		} catch (caught) {
+			return {
+				ok: false,
+				result: error(
+					"invalid_scene",
+					caught instanceof Error
+						? caught.message
+						: "Obsidian drawing could not be decoded",
+				),
+			};
+		}
+	}
+	const validation = validateSceneContent(decoded);
+	if (!validation.ok) return validation;
+	return { ...validation, content: decoded };
 }
 
 export function validateScene(value: string) {
@@ -325,17 +401,6 @@ export function createSceneHandlers(bb: BbPluginApi) {
 		| { error: z.infer<typeof sceneErrorSchema> }
 	> {
 		if (source.kind === "thread-storage") return { error: sourceError(source) };
-		if (source.projectId) {
-			return {
-				kind: "project",
-				path: relativePath,
-				projectId: source.projectId,
-				...(source.environmentId
-					? { environmentId: source.environmentId }
-					: {}),
-				writable: false,
-			};
-		}
 		const threadEnvironmentId = source.threadId
 			? (await bb.sdk.threads.get({ threadId: source.threadId })).environmentId
 			: null;
@@ -353,10 +418,42 @@ export function createSceneHandlers(bb: BbPluginApi) {
 		}
 		const environmentId = source.environmentId ?? threadEnvironmentId;
 		if (!environmentId) {
+			if (source.projectId) {
+				const project = await bb.sdk.projects.get({
+					projectId: source.projectId,
+				});
+				const projectSource =
+					project.sources.find((entry) => entry.isDefault) ?? project.sources[0];
+				if (!projectSource) {
+					return {
+						error: error(
+							"missing_workspace",
+							"This project has no authoritative workspace source",
+						),
+					};
+				}
+				const pathApi =
+					path.win32.isAbsolute(projectSource.path) &&
+					!path.posix.isAbsolute(projectSource.path)
+						? path.win32
+						: path.posix;
+				return {
+					kind: "project",
+					path: pathApi.join(
+						projectSource.path,
+						relativePath.replaceAll("/", pathApi.sep),
+					),
+					rootPath: projectSource.path,
+					hostId: projectSource.hostId,
+					projectId: project.id,
+					sourceKey: `project:${project.id}:${projectSource.id}`,
+					writable: true,
+				};
+			}
 			return {
 				error: error(
 					"authority_unproven",
-					"No environment authority is available for this scene",
+					"No environment or registered project authority is available for this scene",
 				),
 			};
 		}
@@ -427,43 +524,10 @@ export function createSceneHandlers(bb: BbPluginApi) {
 	}
 
 	async function readScene(input: SceneRequest): Promise<SceneReadResult> {
-		const pathResult = validateSourcePath(input.source, input.path);
+		const pathResult = validateSourcePath(input.source, input.path, true);
 		if (!pathResult.ok) return pathResult.result;
 		const target = await resolveTarget(input.source, pathResult.path);
 		if ("error" in target) return target.error;
-		if (target.kind === "project") {
-			const file = target.environmentId
-				? await bb.sdk.projects.fileContent({
-						projectId: target.projectId,
-						environmentId: target.environmentId,
-						path: target.path,
-					})
-				: await bb.sdk.projects.fileContent({
-						projectId: target.projectId,
-						path: target.path,
-					});
-			if (file.contentEncoding !== "utf8") {
-				return error(
-					"unsupported_encoding",
-					"Scene content must be UTF-8 text",
-				);
-			}
-			if (file.sizeBytes > MAX_SCENE_BYTES) {
-				return error("too_large", "Excalidraw scenes are limited to 20 MiB");
-			}
-			const validation = validateSceneContent(file.content);
-			if (!validation.ok) return validation.result;
-			return {
-				status: "ready",
-				path: target.path,
-				content: file.content,
-				contentEncoding: "utf8",
-				sizeBytes: file.sizeBytes,
-				sha256: validation.sha256,
-				sourceKey: null,
-				writable: false,
-			};
-		}
 		const file = await bb.sdk.files.read({
 			hostId: target.hostId,
 			path: target.path,
@@ -475,20 +539,68 @@ export function createSceneHandlers(bb: BbPluginApi) {
 		if (file.sizeBytes > MAX_SCENE_BYTES) {
 			return error("too_large", "Excalidraw scenes are limited to 20 MiB");
 		}
-		const validation = validateSceneContent(file.content);
-		if (!validation.ok) return validation.result;
+		const decoded = decodeStoredScene(pathResult.path, file.content);
+		if (!decoded.ok) return decoded.result;
 		return {
 			status: "ready",
 			path: input.source.kind === "host" ? target.path : pathResult.path,
-			content: file.content,
+			content: decoded.content,
 			contentEncoding: "utf8",
-			sizeBytes: file.sizeBytes,
-			sha256: file.sha256 ?? validation.sha256,
+			sizeBytes: decoded.sizeBytes,
+			sha256: file.sha256 ?? createHash("sha256").update(file.content, "utf8").digest("hex"),
 			sourceKey:
 				target.kind === "workspace"
 					? workspaceSourceKey(target.environmentId)
-					: null,
+					: target.kind === "project"
+						? target.sourceKey
+						: null,
 			writable: target.writable,
+		};
+	}
+
+	async function listProjectScenes(): Promise<ProjectSceneListResult> {
+		const projects = await bb.sdk.projects.list({ includePersonal: true });
+		const entries: ProjectSceneEntry[] = [];
+		const truncatedProjects: string[] = [];
+		const unavailableProjects: string[] = [];
+
+		for (const project of projects) {
+			if (project.sources.length === 0) continue;
+			try {
+				const result = await bb.sdk.projects.paths({
+					projectId: project.id,
+					query: "excalidraw",
+					includeFiles: "true",
+					includeDirectories: "false",
+					limit: String(MAX_SCENE_LIST_PATHS),
+				});
+				for (const entry of result.paths) {
+					if (entry.kind !== "file" || !isReadableScenePath(entry.path)) continue;
+					entries.push({
+						projectId: project.id,
+						projectName: project.name,
+						path: entry.path.replaceAll("\\", "/"),
+						format: isObsidianScenePath(entry.path)
+							? "obsidian-markdown"
+							: "native",
+					});
+				}
+				if (result.truncated) truncatedProjects.push(project.name);
+			} catch {
+				unavailableProjects.push(project.name);
+			}
+		}
+
+		entries.sort(
+			(left, right) =>
+				left.projectName.localeCompare(right.projectName) ||
+				left.path.localeCompare(right.path),
+		);
+		return {
+			status: "ready",
+			entries,
+			truncatedProjects,
+			unavailableProjects,
 		};
 	}
 
@@ -518,8 +630,7 @@ export function createSceneHandlers(bb: BbPluginApi) {
 			paths: result.paths
 				.filter(
 					(entry) =>
-						entry.kind === "file" &&
-						path.posix.extname(entry.path).toLowerCase() === ".excalidraw",
+						entry.kind === "file" && isReadableScenePath(entry.path),
 				)
 				.map((entry) => entry.path.replaceAll("\\", "/"))
 				.sort((left, right) => left.localeCompare(right)),
@@ -621,23 +732,67 @@ export function createSceneHandlers(bb: BbPluginApi) {
 	}
 
 	async function saveScene(input: SaveSceneRequest): Promise<SceneWriteResult> {
-		const pathResult = validateSourcePath(input.source, input.path);
+		const pathResult = validateSourcePath(input.source, input.path, true);
 		if (!pathResult.ok) return pathResult.result;
 		const validation = validateSceneContent(input.content);
 		if (!validation.ok) return validation.result;
 		const target = await resolveTarget(input.source, pathResult.path);
 		if ("error" in target) return target.error;
-		if (!target.writable || target.kind !== "workspace") {
+		if (!target.writable || target.kind === "host") {
 			return error(
 				"unsupported_source",
-				"Only authoritative workspace scenes can be edited",
+				"Only authoritative workspace or registered-project scenes can be edited",
 			);
 		}
+
+		let storedContent = input.content;
+		if (isObsidianScenePath(pathResult.path)) {
+			const current = await bb.sdk.files.read({
+				hostId: target.hostId,
+				path: target.path,
+				rootPath: target.rootPath,
+			});
+			if (current.contentEncoding !== "utf8") {
+				return error(
+					"unsupported_encoding",
+					"Scene content must be UTF-8 text",
+				);
+			}
+			const currentSha256 =
+				current.sha256 ??
+				createHash("sha256").update(current.content, "utf8").digest("hex");
+			if (
+				input.expectedSha256 !== null &&
+				currentSha256 !== input.expectedSha256
+			) {
+				return {
+					status: "conflict",
+					currentSha256,
+				};
+			}
+			try {
+				storedContent = encodeObsidianExcalidrawMarkdown(
+					current.content,
+					input.content,
+				);
+			} catch (caught) {
+				return error(
+					"invalid_scene",
+					caught instanceof Error
+						? caught.message
+						: "Obsidian drawing could not be encoded",
+				);
+			}
+			if (Buffer.byteLength(storedContent, "utf8") > MAX_SCENE_BYTES) {
+				return error("too_large", "Excalidraw scenes are limited to 20 MiB");
+			}
+		}
+
 		const result = await bb.sdk.files.write({
 			hostId: target.hostId,
 			path: target.path,
 			rootPath: target.rootPath,
-			content: input.content,
+			content: storedContent,
 			contentEncoding: "utf8",
 			expectedSha256: input.expectedSha256,
 		});
@@ -645,10 +800,22 @@ export function createSceneHandlers(bb: BbPluginApi) {
 			return { status: "conflict", currentSha256: result.currentSha256 };
 		}
 		if (input.writerNonce !== undefined) {
+			const sourceKey =
+				target.kind === "workspace"
+					? workspaceSourceKey(target.environmentId)
+					: target.kind === "project"
+						? target.sourceKey
+						: null;
+			if (!sourceKey) {
+				return error(
+					"authority_unproven",
+					"Scene source cannot publish authoritative invalidations",
+				);
+			}
 			bb.realtime.publish(
 				EXCALIDRAW_INVALIDATION_CHANNEL,
 				excalidrawInvalidationPayloadSchema.parse({
-					sourceKey: workspaceSourceKey(target.environmentId),
+					sourceKey,
 					path: pathResult.path,
 					sha256: result.sha256,
 					writerNonce: input.writerNonce,
@@ -664,6 +831,7 @@ export function createSceneHandlers(bb: BbPluginApi) {
 
 	return {
 		readScene,
+		listProjectScenes,
 		listScenes,
 		readSemanticScene,
 		createSemanticScene,

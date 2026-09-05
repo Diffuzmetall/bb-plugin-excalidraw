@@ -81,13 +81,17 @@ vi.mock("@excalidraw/excalidraw", async (importOriginal) => {
 	};
 });
 
-vi.mock("@bb/plugin-sdk/app", () => {
+vi.mock("@get-bb/plugin-sdk/app", () => {
 	const app = {
 		fileOpeners: [] as Array<Record<string, unknown>>,
+		navPanels: [] as Array<Record<string, unknown>>,
 		threadPanelActions: [] as Array<Record<string, unknown>>,
 		slots: {
 			fileOpener(config: Record<string, unknown>) {
 				app.fileOpeners.push(config);
+			},
+			navPanel(config: Record<string, unknown>) {
+				app.navPanels.push(config);
 			},
 			threadPanelAction(config: Record<string, unknown>) {
 				app.threadPanelActions.push(config);
@@ -98,6 +102,9 @@ vi.mock("@bb/plugin-sdk/app", () => {
 		definePluginApp(register: (value: typeof app) => void) {
 			register(app);
 			return app;
+		},
+		useBbNavigate() {
+			return { toPluginPanel() {} };
 		},
 		useRealtime(_channel: string, handler: (payload: object) => void) {
 			realtimeHandler = handler;

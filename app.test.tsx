@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadPluginApp, renderSlot } from "@bb/plugin-sdk/testing/app";
+import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { act, createElement, useEffect, type ReactNode } from "react";
 import { clearSaveCoordinator } from "./save-coordinator";
 import { EXCALIDRAW_INVALIDATION_CHANNEL } from "./realtime-invalidation";
@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
 	canvasFiles: {} as Record<string, object>,
 	theme: null as "light" | "dark" | null,
 	themePreference: null as "light" | "dark" | "system" | null,
+	viewModeEnabled: null as boolean | null,
 	onThemeSelect: null as
 		| ((theme: "light" | "dark" | "system") => void)
 		| null,
@@ -102,6 +103,7 @@ vi.mock("@excalidraw/excalidraw", () => {
 		Excalidraw: (props: {
 			onChange?: typeof mocks.onChange;
 			validateEmbeddable?: boolean;
+			viewModeEnabled?: boolean;
 			onLinkOpen?: typeof mocks.onLinkOpen;
 			excalidrawAPI?: (api: MockExcalidrawApi | null) => void;
 			theme?: "light" | "dark";
@@ -114,6 +116,7 @@ vi.mock("@excalidraw/excalidraw", () => {
 		}) => {
 			mocks.onChange = props.onChange ?? null;
 			mocks.validateEmbeddable = props.validateEmbeddable ?? null;
+			mocks.viewModeEnabled = props.viewModeEnabled ?? null;
 			mocks.initialData = props.initialData ?? null;
 			mocks.onLinkOpen = props.onLinkOpen ?? null;
 			mocks.theme = props.theme ?? null;
@@ -167,6 +170,7 @@ const source = {
 	environmentId: "env-1",
 	projectId: null,
 };
+const Original = () => createElement("div", { "data-testid": "original-file" });
 const elements = [{ id: "element-1", type: "rectangle" }];
 const files = {
 	"file-1": { id: "file-1", dataURL: "data:image/png;base64,AA==" },
@@ -193,6 +197,7 @@ afterEach(() => {
 	mocks.canvasFiles = {};
 	mocks.theme = null;
 	mocks.themePreference = null;
+	mocks.viewModeEnabled = null;
 	mocks.onThemeSelect = null;
 	window.localStorage.removeItem("bb.excalidraw.theme");
 	document.documentElement.classList.remove("dark");
@@ -204,7 +209,7 @@ type SaveHandler = (input: unknown) => Promise<{
 	sizeBytes: number;
 }>;
 
-type ReadHandler = () => Promise<{
+type ReadHandler = (input?: unknown) => Promise<{
 	status: "ready";
 	path: string;
 	content: string;
@@ -219,6 +224,18 @@ type ListHandler = () => Promise<{
 	status: "ready";
 	paths: string[];
 	truncated: boolean;
+}>;
+
+type ProjectListHandler = () => Promise<{
+	status: "ready";
+	entries: Array<{
+		projectId: string;
+		projectName: string;
+		path: string;
+		format: "native" | "obsidian-markdown";
+	}>;
+	truncatedProjects: string[];
+	unavailableProjects: string[];
 }>;
 
 const defaultReadScene: ReadHandler = async () => ({
@@ -240,11 +257,18 @@ function rpcHandlers(
 		paths: ["AI+MAN.excalidraw"],
 		truncated: false,
 	}),
+	listProjectScenes: ProjectListHandler = async () => ({
+		status: "ready",
+		entries: [],
+		truncatedProjects: [],
+		unavailableProjects: [],
+	}),
 ) {
 	return {
 		readScene,
 		saveScene: async (input: unknown) => saveScene(input),
 		listScenes,
+		listProjectScenes,
 		ping: async () => ({ ok: true as const }),
 	};
 }
@@ -266,7 +290,13 @@ describe("Excalidraw app registration", () => {
 		}
 	});
 
-	it("registers the Excalidraw launcher and file opener", () => {
+	it("registers the Excalidraw library, launcher, and file opener", () => {
+		expect(app.navPanels).toHaveLength(1);
+		expect(app.navPanels[0]).toMatchObject({
+			id: "excalidraw-library",
+			title: "Drawings",
+			path: "excalidraw",
+		});
 		expect(app.threadPanelActions).toHaveLength(1);
 		expect(app.threadPanelActions[0]).toMatchObject({
 			id: "excalidraw",
@@ -277,11 +307,140 @@ describe("Excalidraw app registration", () => {
 		expect(app.fileOpeners[0]).toMatchObject({
 			id: "excalidraw",
 			title: "Excalidraw",
-			extensions: ["excalidraw"],
+			extensions: ["excalidraw", "md"],
 		});
 	});
 
-	it("opens the only workspace drawing from the panel launcher", async () => {
+	it("delegates ordinary Markdown files to BB's original viewer", async () => {
+		const rendered = renderSlot(app.fileOpeners[0], {
+			path: "README.md",
+			source,
+			Original,
+		});
+		unmountRendered = rendered.unmount;
+
+		await rendered.findByTestId("original-file");
+	});
+
+	it("lists registered-project drawings and opens Obsidian files for editing", async () => {
+		mocks.loadFromBlob.mockResolvedValue(scene);
+		mocks.serializeAsJSON.mockImplementation(
+			(nextElements, nextAppState, nextFiles) =>
+				JSON.stringify({
+					elements: nextElements,
+					appState: nextAppState,
+					files: nextFiles,
+				}),
+		);
+		const saveScene = vi.fn<SaveHandler>(async () => ({
+			status: "written",
+			sha256: savedSha,
+			sizeBytes: serializedScene.length,
+		}));
+		const readScene = vi.fn<ReadHandler>(async (input) => ({
+			...(await defaultReadScene()),
+			path:
+				(input as { path?: string } | undefined)?.path ??
+				"Excalidraw/Map.excalidraw.md",
+			sourceKey: "project:project-obsidian:source-1",
+			writable: true,
+		}));
+		const listProjectScenes = vi.fn<ProjectListHandler>(async () => ({
+			status: "ready",
+			entries: [
+				{
+					projectId: "project-obsidian",
+					projectName: "Obsidian Vault",
+					path: "Excalidraw/Map.excalidraw.md",
+					format: "obsidian-markdown",
+				},
+				{
+					projectId: "project-obsidian",
+					projectName: "Obsidian Vault",
+					path: "Excalidraw/Other.excalidraw",
+					format: "native",
+				},
+			],
+			truncatedProjects: [],
+			unavailableProjects: [],
+		}));
+		resetMockOnChange();
+		const rendered = renderSlot(
+			app.navPanels[0],
+			{ subPath: "" },
+			{
+				rpc: rpcHandlers(
+					saveScene,
+					readScene,
+					undefined,
+					listProjectScenes,
+				),
+			},
+		);
+		unmountRendered = rendered.unmount;
+
+		const drawingButton = await rendered.findByRole("button", {
+			name: /Excalidraw\/Map\.excalidraw\.md/,
+		});
+		await rendered.findByTestId("mock-edit");
+		drawingButton.click();
+		expect(rendered.inspection.navigateCalls).toContainEqual({
+			method: "toPluginPanel",
+			path: "excalidraw",
+			options: {
+				subPath:
+					"project-obsidian/Excalidraw%2FMap.excalidraw.md",
+			},
+		});
+		expect(listProjectScenes).toHaveBeenCalledOnce();
+		expect(readScene).toHaveBeenCalledWith({
+			path: "Excalidraw/Map.excalidraw.md",
+			source: {
+				kind: "workspace",
+				threadId: null,
+				environmentId: null,
+				projectId: "project-obsidian",
+			},
+		});
+		expect(mocks.viewModeEnabled).toBe(false);
+		await act(async () => {
+			mocks.onChange?.(
+				[{ ...elements[0], x: 20 }],
+				scene.appState,
+				files,
+			);
+		});
+		const saveButton = await rendered.findByRole("button", { name: "Save" });
+		const otherDrawingButton = rendered.getByRole("button", {
+			name: /Excalidraw\/Other\.excalidraw/,
+		}) as HTMLButtonElement;
+		expect(otherDrawingButton.disabled).toBe(true);
+		otherDrawingButton.click();
+		expect(readScene).toHaveBeenCalledOnce();
+
+		await act(async () => {
+			saveButton.click();
+		});
+		await vi.waitFor(() => expect(saveScene).toHaveBeenCalledOnce());
+		await vi.waitFor(() => expect(otherDrawingButton.disabled).toBe(false));
+
+		await act(async () => {
+			otherDrawingButton.click();
+		});
+		await vi.waitFor(() => {
+			expect(readScene).toHaveBeenLastCalledWith({
+				path: "Excalidraw/Other.excalidraw",
+				source: {
+					kind: "workspace",
+					threadId: null,
+					environmentId: null,
+					projectId: "project-obsidian",
+				},
+			});
+		});
+	});
+
+	it("opens registered-project drawings from the panel launcher", async () => {
 		mocks.loadFromBlob.mockResolvedValue(scene);
 		mocks.serializeAsJSON.mockReturnValue(serializedScene);
 		const saveScene = vi.fn<SaveHandler>(async () => ({
@@ -293,25 +452,55 @@ describe("Excalidraw app registration", () => {
 			...(await defaultReadScene()),
 			path: "AI+MAN.excalidraw",
 		}));
-		const listScenes = vi.fn<ListHandler>(async () => ({
+		const listProjectScenes = vi.fn<ProjectListHandler>(async () => ({
 			status: "ready",
-			paths: ["AI+MAN.excalidraw"],
-			truncated: false,
+			entries: [
+				{
+					projectId: "project-brain",
+					projectName: "brain",
+					path: "concepts/AI+MAN.excalidraw",
+					format: "native",
+				},
+			],
+			truncatedProjects: [],
+			unavailableProjects: [],
 		}));
 		const rendered = renderSlot(
 			app.threadPanelActions[0],
 			{ threadId: "thread-1", params: null },
-			{ rpc: rpcHandlers(saveScene, readScene, listScenes) },
+			{
+				rpc: rpcHandlers(
+					saveScene,
+					readScene,
+					undefined,
+					listProjectScenes,
+				),
+			},
 		);
 		unmountRendered = rendered.unmount;
 
 		await rendered.findByTestId("mock-edit");
-		expect(listScenes).toHaveBeenCalledOnce();
+		const picker = (await rendered.findByLabelText(
+			"Drawing",
+		)) as HTMLSelectElement;
+		expect(picker.value).toBe("project-brain:concepts/AI+MAN.excalidraw");
+		expect(picker.options[0]?.textContent).toBe(
+			"brain — concepts/AI+MAN.excalidraw",
+		);
+		expect(listProjectScenes).toHaveBeenCalledOnce();
 		expect(rendered.inspection.rpcCalls[0]).toMatchObject({
-			method: "listScenes",
-			input: { threadId: "thread-1" },
+			method: "listProjectScenes",
+			input: {},
 		});
-		expect(readScene).toHaveBeenCalledOnce();
+		expect(readScene).toHaveBeenCalledWith({
+			path: "concepts/AI+MAN.excalidraw",
+			source: {
+				kind: "workspace",
+				threadId: null,
+				environmentId: null,
+				projectId: "project-brain",
+			},
+		});
 	});
 
 	it("loads through the RPC and ignores viewport-only changes", async () => {
@@ -331,7 +520,7 @@ describe("Excalidraw app registration", () => {
 		}));
 		const rendered = renderSlot(
 			app.fileOpeners[0],
-			{ path: "drawing.excalidraw", source },
+			{ path: "drawing.excalidraw", source, Original },
 			{ rpc: rpcHandlers(saveScene) },
 		);
 
@@ -363,7 +552,7 @@ describe("Excalidraw app registration", () => {
 		}));
 		const rendered = renderSlot(
 			app.fileOpeners[0],
-			{ path: "drawing.excalidraw", source },
+			{ path: "drawing.excalidraw", source, Original },
 			{ rpc: rpcHandlers(saveScene) },
 		);
 		unmountRendered = rendered.unmount;
@@ -401,7 +590,7 @@ describe("Excalidraw app registration", () => {
 		resetMockOnChange();
 		const rendered = renderSlot(
 			app.fileOpeners[0],
-			{ path: "drawing.excalidraw", source },
+			{ path: "drawing.excalidraw", source, Original },
 			{ rpc: rpcHandlers(saveScene) },
 		);
 		unmountRendered = rendered.unmount;
@@ -443,7 +632,7 @@ describe("Excalidraw app registration", () => {
 		resetMockOnChange();
 		const rendered = renderSlot(
 			app.fileOpeners[0],
-			{ path: "drawing.excalidraw", source },
+			{ path: "drawing.excalidraw", source, Original },
 			{ rpc: rpcHandlers(saveScene) },
 		);
 		unmountRendered = rendered.unmount;
@@ -483,7 +672,7 @@ describe("Excalidraw app registration", () => {
 		resetMockOnChange();
 		const rendered = renderSlot(
 			app.fileOpeners[0],
-			{ path: "drawing.excalidraw", source },
+			{ path: "drawing.excalidraw", source, Original },
 			{ rpc: rpcHandlers(saveScene) },
 		);
 		await rendered.findByTestId("mock-edit");
@@ -521,7 +710,7 @@ describe("Excalidraw app registration", () => {
 		const readScene = vi.fn<ReadHandler>(defaultReadScene);
 		const rendered = renderSlot(
 			app.fileOpeners[0],
-			{ path: "drawing.excalidraw", source },
+			{ path: "drawing.excalidraw", source, Original },
 			{ rpc: rpcHandlers(saveScene, readScene) },
 		);
 		unmountRendered = rendered.unmount;
@@ -606,7 +795,7 @@ describe("Excalidraw app registration", () => {
 		}));
 		const rendered = renderSlot(
 			app.fileOpeners[0],
-			{ path: "drawing.excalidraw", source },
+			{ path: "drawing.excalidraw", source, Original },
 			{ rpc: rpcHandlers(saveScene, readScene) },
 		);
 		unmountRendered = rendered.unmount;
@@ -696,7 +885,7 @@ describe("Excalidraw app registration", () => {
 		}));
 		const first = renderSlot(
 			app.fileOpeners[0],
-			{ path: "drawing.excalidraw", source },
+			{ path: "drawing.excalidraw", source, Original },
 			{ rpc: rpcHandlers(saveScene, readScene) },
 		);
 		await first.findByTestId("mock-edit");
@@ -713,7 +902,7 @@ describe("Excalidraw app registration", () => {
 
 		const second = renderSlot(
 			app.fileOpeners[0],
-			{ path: "drawing.excalidraw", source },
+			{ path: "drawing.excalidraw", source, Original },
 			{ rpc: rpcHandlers(saveScene, readScene) },
 		);
 		unmountRendered = second.unmount;
@@ -771,7 +960,7 @@ describe("Excalidraw app registration", () => {
 		}));
 		const rendered = renderSlot(
 			app.fileOpeners[0],
-			{ path: "drawing.excalidraw", source },
+			{ path: "drawing.excalidraw", source, Original },
 			{
 				rpc: rpcHandlers(saveScene, readScene),
 				realtimeConnectionState: "connected",

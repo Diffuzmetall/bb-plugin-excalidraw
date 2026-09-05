@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 import { registerExcalidrawCli } from "./cli.js";
 import {
 	createSceneHandlers,
+	projectSceneListRequestSchema,
+	projectSceneListResultSchema,
 	saveSceneRequestSchema,
 	sceneAgentApplyRequestSchema,
 	sceneAgentCreateRequestSchema,
@@ -29,6 +31,10 @@ export const excalidrawRpcContract = defineRpcContract({
 		input: sceneListRequestSchema,
 		output: sceneListResultSchema,
 	},
+	listProjectScenes: {
+		input: projectSceneListRequestSchema,
+		output: projectSceneListResultSchema,
+	},
 	ping: {
 		input: z.null(),
 		output: z.object({ ok: z.literal(true) }).strict(),
@@ -41,6 +47,7 @@ export default async function plugin(bb: BbPluginApi) {
 	const handlers = createSceneHandlers(bb);
 	const {
 		readScene,
+		listProjectScenes,
 		listScenes,
 		readSemanticScene,
 		createSemanticScene,
@@ -52,6 +59,7 @@ export default async function plugin(bb: BbPluginApi) {
 		readScene,
 		saveScene,
 		listScenes,
+		listProjectScenes,
 		ping() {
 			return { ok: true as const };
 		},
@@ -67,9 +75,10 @@ export default async function plugin(bb: BbPluginApi) {
 				threadId: ctx.threadId,
 				signal: ctx.signal,
 			});
+			const isError = result.status === "error"; // ubs:ignore — public result discriminant, not a secret comparison
 			return {
 				content: [{ type: "text", text: JSON.stringify(result) }],
-				...(result.status === "error" ? { isError: true } : {}),
+				...(isError ? { isError: true } : {}),
 			};
 		},
 	});
@@ -85,11 +94,11 @@ export default async function plugin(bb: BbPluginApi) {
 				signal: ctx.signal,
 				writerNonce: randomUUID(),
 			});
+			const isError = // ubs:ignore — public result discriminants, not secret comparisons
+				result.status === "error" || result.status === "conflict";
 			return {
 				content: [{ type: "text", text: JSON.stringify(result) }],
-				...(result.status === "error" || result.status === "conflict"
-					? { isError: true }
-					: {}),
+				...(isError ? { isError: true } : {}),
 			};
 		},
 	});
@@ -105,11 +114,11 @@ export default async function plugin(bb: BbPluginApi) {
 				signal: ctx.signal,
 				writerNonce: randomUUID(),
 			});
+			const isError = // ubs:ignore — public result discriminants, not secret comparisons
+				result.status === "error" || result.status === "conflict";
 			return {
 				content: [{ type: "text", text: JSON.stringify(result) }],
-				...(result.status === "error" || result.status === "conflict"
-					? { isError: true }
-					: {}),
+				...(isError ? { isError: true } : {}),
 			};
 		},
 	});

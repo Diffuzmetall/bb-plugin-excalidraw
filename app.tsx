@@ -6,12 +6,14 @@ import {
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import {
 	definePluginApp,
+	useBbNavigate,
 	useRealtime,
 	useRealtimeConnectionState,
 	useRpc,
 	type PluginFileOpenerProps,
+	type PluginNavPanelProps,
 	type PluginThreadPanelProps,
-} from "@bb/plugin-sdk/app";
+} from "@get-bb/plugin-sdk/app";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExcalidrawRpcContract } from "./server";
 import {
@@ -102,7 +104,23 @@ function persistCanvasThemePreference(
 	}
 }
 
-export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
+type ExcalidrawOpenProps = Pick<PluginFileOpenerProps, "path" | "source"> & {
+	onSwitchSafetyChange?: (blocked: boolean) => void;
+};
+
+function isExcalidrawFile(path: string): boolean {
+	const normalized = path.toLowerCase();
+	return (
+		normalized.endsWith(".excalidraw") ||
+		normalized.endsWith(".excalidraw.md")
+	);
+}
+
+export function ExcalidrawFileOpener({
+	path,
+	source,
+	onSwitchSafetyChange,
+}: ExcalidrawOpenProps) {
 	const mountRef = useRef<HTMLDivElement>(null);
 	const rpc = useRpc<ExcalidrawRpcContract>();
 	const [hostTheme, setHostTheme] = useState<CanvasTheme>(readHostTheme);
@@ -116,6 +134,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 		useState<SaveCoordinatorState | null>(null);
 	const [loadState, setLoadState] = useState<LoadState>("loading");
 	const [message, setMessage] = useState("Loading scene…");
+	const [writable, setWritable] = useState(false);
 
 	const clientSourceKey = `${source.kind}:${source.threadId ?? ""}:${source.environmentId ?? ""}:${source.projectId ?? ""}`;
 	const loadKey = `${clientSourceKey}:${path}`;
@@ -203,7 +222,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 			},
 			parsed.data,
 		);
-		if (decision.action === "ignore") return;
+		if (decision.action === "ignore") return; // ubs:ignore — public discriminated-union action, not a secret comparison
 		void active.coordinator
 			.handleExternalInvalidation(parsed.data.sha256)
 			.catch((cause) => {
@@ -238,6 +257,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 		let lease: SaveCoordinatorLease | null = null;
 		setLoadState("loading");
 		setMessage("Loading scene…");
+		setWritable(false);
 		setScene(null);
 		void (async () => {
 			try {
@@ -253,6 +273,20 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 				if (restored.status === "error") {
 					setLoadState("error");
 					setMessage(restored.message);
+					return;
+				}
+				setWritable(result.writable);
+				if (!result.writable) {
+					renderedSceneRef.current = restored.scene;
+					setScene(restored.scene);
+					setCoordinator(null);
+					setCoordinatorState(null);
+					setLoadState("ready");
+					setMessage(
+						path.toLowerCase().endsWith(".excalidraw.md")
+							? "Read-only Obsidian drawing"
+							: "Read-only drawing",
+					);
 					return;
 				}
 				const coordinatorKey = `${result.sourceKey ?? clientSourceKey}:${result.path}`;
@@ -450,13 +484,13 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
-			if (!isSaveShortcut(event)) return;
+			if (!writable || !isSaveShortcut(event)) return;
 			event.preventDefault();
 			void save();
 		};
 		document.addEventListener("keydown", onKeyDown);
 		return () => document.removeEventListener("keydown", onKeyDown);
-	}, [save]);
+	}, [save, writable]);
 
 	const handleChange = useCallback(
 		(
@@ -494,8 +528,18 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 		coordinatorState?.status === "saving" ||
 		coordinatorState?.status === "conflict";
 	const isSaving = coordinatorState?.status === "saving";
+	const switchBlocked = Boolean(
+		coordinatorState && coordinatorState.status !== "clean",
+	);
+	useEffect(() => {
+		onSwitchSafetyChange?.(switchBlocked);
+	}, [onSwitchSafetyChange, switchBlocked]);
+	useEffect(
+		() => () => onSwitchSafetyChange?.(false),
+		[onSwitchSafetyChange],
+	);
 	const showStatus =
-		loadState !== "ready" || coordinatorState?.status !== "clean";
+		!writable || loadState !== "ready" || coordinatorState?.status !== "clean";
 	const restoreFocus = () => {
 		requestAnimationFrame(() => mountRef.current?.focus());
 	};
@@ -521,7 +565,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 					aria-atomic="true"
 				>
 					<span>{message}</span>
-					{loadState === "ready" && (
+					{loadState === "ready" && writable && (
 						<>
 							<button
 								type="button"
@@ -542,6 +586,7 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 			{scene && loadState === "ready" && (
 				<Excalidraw
 					autoFocus
+					viewModeEnabled={!writable}
 					theme={theme}
 					excalidrawAPI={handleApi}
 					onChange={handleChange}
@@ -558,40 +603,48 @@ export function ExcalidrawFileOpener({ path, source }: PluginFileOpenerProps) {
 	);
 }
 
-export function ExcalidrawPanel({ threadId }: PluginThreadPanelProps) {
+export function ExcalidrawPanel(_props: PluginThreadPanelProps) {
 	const rpc = useRpc<ExcalidrawRpcContract>();
-	const [paths, setPaths] = useState<string[]>([]);
-	const [selectedPath, setSelectedPath] = useState<string | null>(null);
+	const [entries, setEntries] = useState<ProjectSceneEntry[]>([]);
+	const [selectedKey, setSelectedKey] = useState<string | null>(null);
+	const [switchBlocked, setSwitchBlocked] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [listError, setListError] = useState<string | null>(null);
-	const [truncated, setTruncated] = useState(false);
+	const [listNotice, setListNotice] = useState<string | null>(null);
 
 	useEffect(() => {
 		let cancelled = false;
 		setLoading(true);
 		setListError(null);
 		void rpc
-			.call("listScenes", { threadId })
+			.call("listProjectScenes", {})
 			.then((result) => {
 				if (cancelled) return;
-				if (result.status === "error") {
-					setPaths([]);
-					setSelectedPath(null);
-					setListError(result.message);
-					return;
-				}
-				setPaths(result.paths);
-				setTruncated(result.truncated);
-				setSelectedPath((current) =>
-					current && result.paths.includes(current)
+				setEntries(result.entries);
+				setSelectedKey((current) =>
+					current &&
+					result.entries.some((entry) => projectSceneKey(entry) === current)
 						? current
-						: (result.paths[0] ?? null),
+						: result.entries[0]
+							? projectSceneKey(result.entries[0])
+							: null,
 				);
+				const notices = [
+					result.truncatedProjects.length
+						? `Results truncated in: ${result.truncatedProjects.join(", ")}`
+						: null,
+					result.unavailableProjects.length
+						? `Unavailable: ${result.unavailableProjects.join(", ")}`
+						: null,
+				].filter(Boolean);
+				setListNotice(notices.length ? notices.join(" · ") : null);
 			})
 			.catch((cause) => {
 				if (cancelled) return;
+				setEntries([]);
+				setSelectedKey(null);
 				setListError(
-					cause instanceof Error ? cause.message : "Could not list scenes",
+					cause instanceof Error ? cause.message : "Could not list drawings",
 				);
 			})
 			.finally(() => {
@@ -600,7 +653,7 @@ export function ExcalidrawPanel({ threadId }: PluginThreadPanelProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [rpc, threadId]);
+	}, [rpc]);
 
 	if (loading) {
 		return (
@@ -616,51 +669,245 @@ export function ExcalidrawPanel({ threadId }: PluginThreadPanelProps) {
 			</div>
 		);
 	}
-	if (!selectedPath) {
+	const selected =
+		entries.find((entry) => projectSceneKey(entry) === selectedKey) ?? null;
+	if (!selected) {
 		return (
 			<div className="excalidraw-panel-state" role="status">
-				No .excalidraw files found in this workspace.
+				No Excalidraw files found in registered projects.
 			</div>
 		);
 	}
 
-	const source = {
-		kind: "workspace" as const,
-		threadId,
-		environmentId: null,
-		projectId: null,
-	};
 	return (
 		<div className="excalidraw-action-panel">
-			{paths.length > 1 || truncated ? (
-				<div className="excalidraw-scene-picker">
-					<label htmlFor="excalidraw-scene-path">Drawing</label>
-					<select
-						id="excalidraw-scene-path"
-						value={selectedPath}
-						onChange={(event) => setSelectedPath(event.currentTarget.value)}
-					>
-						{paths.map((scenePath) => (
-							<option key={scenePath} value={scenePath}>
-								{scenePath}
-							</option>
-						))}
-					</select>
-					{truncated ? <span>Results truncated</span> : null}
-				</div>
-			) : null}
+			<div className="excalidraw-scene-picker">
+				<label htmlFor="excalidraw-scene-path">Drawing</label>
+				<select
+					id="excalidraw-scene-path"
+					value={projectSceneKey(selected)}
+					disabled={switchBlocked}
+					title={switchBlocked ? "Save or resolve changes before switching" : undefined}
+					onChange={(event) => setSelectedKey(event.currentTarget.value)}
+				>
+					{entries.map((entry) => (
+						<option key={projectSceneKey(entry)} value={projectSceneKey(entry)}>
+							{entry.projectName} — {entry.path}
+						</option>
+					))}
+				</select>
+				{listNotice ? <span>{listNotice}</span> : null}
+			</div>
 			<div className="excalidraw-action-canvas">
 				<ExcalidrawFileOpener
-					key={selectedPath}
-					path={selectedPath}
-					source={source}
+					key={projectSceneKey(selected)}
+					path={selected.path}
+					source={{
+						kind: "workspace",
+						threadId: null,
+						environmentId: null,
+						projectId: selected.projectId,
+					}}
+					onSwitchSafetyChange={setSwitchBlocked}
 				/>
 			</div>
 		</div>
 	);
 }
 
+type ProjectSceneEntry = {
+	projectId: string;
+	projectName: string;
+	path: string;
+	format: "native" | "obsidian-markdown";
+};
+
+function projectSceneKey(entry: ProjectSceneEntry): string {
+	return `${entry.projectId}:${entry.path}`;
+}
+
+function projectSceneSubPath(entry: ProjectSceneEntry): string {
+	return `${encodeURIComponent(entry.projectId)}/${encodeURIComponent(entry.path)}`;
+}
+
+function selectedProjectScene(
+	entries: ProjectSceneEntry[],
+	subPath: string,
+): ProjectSceneEntry | null {
+	const separator = subPath.indexOf("/");
+	if (separator < 1) return null;
+	try {
+		const projectId = decodeURIComponent(subPath.slice(0, separator));
+		const scenePath = decodeURIComponent(subPath.slice(separator + 1));
+		return (
+			entries.find(
+				(entry) => entry.projectId === projectId && entry.path === scenePath,
+			) ?? null
+		);
+	} catch {
+		return null;
+	}
+}
+
+export function ExcalidrawLibrary({ subPath }: PluginNavPanelProps) {
+	const rpc = useRpc<ExcalidrawRpcContract>();
+	const navigate = useBbNavigate();
+	const [entries, setEntries] = useState<ProjectSceneEntry[]>([]);
+	const [query, setQuery] = useState("");
+	const [selectedKey, setSelectedKey] = useState<string | null>(null);
+	const [switchBlocked, setSwitchBlocked] = useState(false);
+	const [loading, setLoading] = useState(true);
+	const [message, setMessage] = useState<string | null>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+		setLoading(true);
+		void rpc
+			.call("listProjectScenes", {})
+			.then((result) => {
+				if (cancelled) return;
+				setEntries(result.entries);
+				const notices = [
+					result.truncatedProjects.length
+						? `Results truncated in: ${result.truncatedProjects.join(", ")}`
+						: null,
+					result.unavailableProjects.length
+						? `Unavailable: ${result.unavailableProjects.join(", ")}`
+						: null,
+				].filter(Boolean);
+				setMessage(notices.length ? notices.join(" · ") : null);
+			})
+			.catch((cause) => {
+				if (!cancelled) {
+					setMessage(
+						cause instanceof Error ? cause.message : "Could not list drawings",
+					);
+				}
+			})
+			.finally(() => {
+				if (!cancelled) setLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [rpc]);
+
+	const selectedFromRoute = selectedProjectScene(entries, subPath);
+	const selected =
+		entries.find((entry) => projectSceneKey(entry) === selectedKey) ??
+		selectedFromRoute ??
+		entries[0] ??
+		null;
+
+	useEffect(() => {
+		if (selectedFromRoute) setSelectedKey(projectSceneKey(selectedFromRoute));
+	}, [selectedFromRoute]);
+
+	const normalizedQuery = query.trim().toLocaleLowerCase();
+	const visibleEntries = normalizedQuery
+		? entries.filter((entry) =>
+				`${entry.projectName}/${entry.path}`
+					.toLocaleLowerCase()
+					.includes(normalizedQuery),
+			)
+		: entries;
+
+	return (
+		<div className="excalidraw-library">
+			<aside className="excalidraw-library-sidebar">
+				<div className="excalidraw-library-heading">
+					<strong>Drawings</strong>
+					<span>{entries.length}</span>
+				</div>
+				<input
+					type="search"
+					value={query}
+					onChange={(event) => setQuery(event.currentTarget.value)}
+					placeholder="Search drawings"
+					aria-label="Search drawings"
+				/>
+				{message ? <p className="excalidraw-library-notice">{message}</p> : null}
+				{loading ? (
+					<div className="excalidraw-library-empty" role="status">
+						Loading drawings…
+					</div>
+				) : visibleEntries.length === 0 ? (
+					<div className="excalidraw-library-empty" role="status">
+						{entries.length === 0
+							? "No Excalidraw files found in registered projects."
+							: "No drawings match this search."}
+					</div>
+				) : (
+					<nav className="excalidraw-library-list" aria-label="Excalidraw files">
+						{visibleEntries.map((entry) => {
+							const active = selected === entry;
+							return (
+								<button
+									key={`${entry.projectId}:${entry.path}`}
+									type="button"
+									className={active ? "is-active" : undefined}
+									disabled={switchBlocked && !active}
+									title={
+										switchBlocked && !active
+											? "Save or resolve changes before switching"
+											: undefined
+									}
+									onClick={() => {
+										setSelectedKey(projectSceneKey(entry));
+										navigate.toPluginPanel("excalidraw", {
+											subPath: projectSceneSubPath(entry),
+										});
+									}}
+								>
+									<span>{entry.path}</span>
+									<small>
+										{entry.projectName}
+										{entry.format === "obsidian-markdown" ? " · Obsidian" : ""}
+									</small>
+								</button>
+							);
+						})}
+					</nav>
+				)}
+			</aside>
+			<main className="excalidraw-library-canvas">
+				{selected ? (
+					<ExcalidrawFileOpener
+						key={`${selected.projectId}:${selected.path}`}
+						path={selected.path}
+						onSwitchSafetyChange={setSwitchBlocked}
+						source={{
+							kind: "workspace",
+							threadId: null,
+							environmentId: null,
+							projectId: selected.projectId,
+						}}
+					/>
+				) : (
+					<div className="excalidraw-panel-state">Select a drawing to preview it.</div>
+				)}
+			</main>
+		</div>
+	);
+}
+
+export function ExcalidrawFileRouter({
+	path,
+	source,
+	Original,
+}: PluginFileOpenerProps) {
+	if (!isExcalidrawFile(path)) return <Original />;
+	return <ExcalidrawFileOpener path={path} source={source} />;
+}
+
 export default definePluginApp((app) => {
+	app.slots.navPanel({
+		id: "excalidraw-library",
+		title: "Drawings",
+		icon: "Shapes",
+		path: "excalidraw",
+		component: ExcalidrawLibrary,
+	});
 	app.slots.threadPanelAction({
 		id: "excalidraw",
 		title: "Excalidraw",
@@ -671,7 +918,7 @@ export default definePluginApp((app) => {
 	app.slots.fileOpener({
 		id: "excalidraw",
 		title: "Excalidraw",
-		extensions: ["excalidraw"],
-		component: ExcalidrawFileOpener,
+		extensions: ["excalidraw", "md"],
+		component: ExcalidrawFileRouter,
 	});
 });

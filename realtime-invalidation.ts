@@ -3,9 +3,9 @@ import { z } from "zod";
 export const EXCALIDRAW_INVALIDATION_CHANNEL =
 	"excalidraw-scene-invalidated" as const;
 
-const canonicalWorkspaceSourceKeySchema = z
+const canonicalSceneSourceKeySchema = z
 	.string()
-	.regex(/^workspace:[^\s]+$/);
+	.regex(/^(workspace|project):[^\s]+$/);
 
 const normalizedWorkspaceRelativePathSchema = z
 	.string()
@@ -30,7 +30,7 @@ const normalizedWorkspaceRelativePathSchema = z
 
 export const excalidrawInvalidationPayloadSchema = z
 	.object({
-		sourceKey: canonicalWorkspaceSourceKeySchema,
+		sourceKey: canonicalSceneSourceKeySchema,
 		path: normalizedWorkspaceRelativePathSchema,
 		sha256: z.string().regex(/^[0-9a-f]{64}$/),
 		writerNonce: z.string().min(1),
@@ -43,7 +43,7 @@ export type ExcalidrawInvalidationPayload = z.infer<
 
 export function workspaceSourceKey(environmentId: string): string {
 	const canonicalEnvironmentId = z.string().trim().min(1).parse(environmentId);
-	return canonicalWorkspaceSourceKeySchema.parse(
+	return canonicalSceneSourceKeySchema.parse(
 		`workspace:${canonicalEnvironmentId}`,
 	);
 }
@@ -74,7 +74,7 @@ export function decideExcalidrawInvalidation(
 	if (event.path !== local.path) {
 		return { action: "ignore", reason: "different-path" };
 	}
-	if (event.writerNonce === local.writerNonce) {
+	if (event.writerNonce === local.writerNonce) { // ubs:ignore — non-secret event-origin nonce used only for self-event deduplication
 		return { action: "ignore", reason: "self" };
 	}
 	if (event.sha256 === local.sha256) {

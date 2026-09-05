@@ -36,7 +36,8 @@ An `.excalidraw` file is JSON, but treating it as generic JSON loses the interac
 
 | Capability | Behavior |
 | --- | --- |
-| Native file opener | Opens `.excalidraw` files as an interactive canvas instead of raw JSON |
+| Native file opener | Opens `.excalidraw` and Obsidian `.excalidraw.md` files as an interactive canvas |
+| Drawings library | Lists scenes across registered BB projects and switches between them without leaving the panel |
 | Workspace launcher | **New tab → Actions → Excalidraw** discovers and switches between existing workspace drawings |
 | Native theme control | The canvas menu provides Excalidraw's light, dark, and system selector |
 | Diagram-design skill | Teaches agents how to plan workflows, architectures, timelines, decisions, comparisons, and feedback loops |
@@ -72,7 +73,7 @@ bb plugin reload excalidraw
 
 To open an existing scene:
 
-1. Choose **Excalidraw** as the default `.excalidraw` opener under **Settings → Files**.
+1. Choose **Excalidraw** as the default opener for `.excalidraw` files under **Settings → Files**. Markdown files ending in `.excalidraw.md` are routed to the canvas automatically; ordinary Markdown still uses BB's original viewer.
 2. Open the file from BB Files, or choose **New tab → Actions → Excalidraw**.
 3. If the workspace contains several drawings, select one from the **Drawing** menu.
 
@@ -288,7 +289,7 @@ Each semantic ID may be targeted only once in a batch. Updates declare the exist
 
 ## CLI reference
 
-All commands resolve workspace authority from `--thread` or the calling BB context. Paths must be normalized, workspace-relative `.excalidraw` paths.
+All commands resolve workspace authority from `--thread` or the calling BB context. Paths must be normalized, workspace-relative `.excalidraw` paths. The UI also opens `.excalidraw.md` scenes from registered project roots and preserves their Obsidian Markdown envelope when saving.
 
 ### Read
 
@@ -465,7 +466,8 @@ dist/
 
 ```text
 .
-├── app.tsx                         # Canvas file opener, launcher, theme, and conflict UI
+├── app.tsx                         # Canvas file opener, project library, theme, and conflict UI
+├── obsidian-scene.ts              # Obsidian Markdown drawing codec
 ├── server.ts                       # RPC, agent tools, skill/tool configuration, and CLI registration
 ├── cli.ts                          # bb excalidraw command surface
 ├── scene-service.ts                # Workspace authority and scene read/write handlers
@@ -549,7 +551,8 @@ npm run test:browser
 ## Limitations
 
 - This is realtime invalidation with conflict protection, not multiplayer CRDT collaboration.
-- The file opener handles `.excalidraw` scenes, not arbitrary JSON, SVG, PNG, or JPEG files.
+- The file opener handles `.excalidraw` and Obsidian `.excalidraw.md` scenes, not arbitrary JSON, SVG, PNG, or JPEG files.
+- Registered project scenes are editable through their authoritative BB project source and retain CAS conflict protection.
 - Semantic operations expose supported diagram primitives, not arbitrary native Excalidraw fields.
 - Images are preserved, but image bodies are not returned to agents or CLI consumers.
 - The launcher discovers existing drawings; scene creation belongs to the agent tools or CLI.

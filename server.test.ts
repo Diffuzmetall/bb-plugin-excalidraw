@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { createFakePluginHost } from "@bb/plugin-sdk/testing";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 
 import plugin from "./server";
@@ -43,6 +43,13 @@ describe("Excalidraw server", () => {
 							},
 							{
 								kind: "file" as const,
+								path: "Obsidian.excalidraw.md",
+								name: "Obsidian.excalidraw.md",
+								score: 0,
+								positions: [],
+							},
+							{
+								kind: "file" as const,
 								path: "README.md",
 								name: "README.md",
 								score: 0,
@@ -68,7 +75,7 @@ describe("Excalidraw server", () => {
 			}),
 		).resolves.toEqual({
 			status: "ready",
-			paths: ["AI+MAN.excalidraw"],
+			paths: ["AI+MAN.excalidraw", "Obsidian.excalidraw.md"],
 			truncated: false,
 		});
 		expect(host.harness.sdk.callsTo("files.listPaths")[0]?.[0]).toEqual({
@@ -263,7 +270,11 @@ describe("Excalidraw server", () => {
 				branchName: null,
 			},
 			host: { id: "host-1", name: "Host" },
-			provider: { id: "codex", model: "test" },
+			provider: {
+				id: "codex",
+				model: "test",
+				capabilities: { supportsNativeUserQuestion: false },
+			},
 			origin: { kind: null, pluginId: null },
 		};
 
@@ -294,6 +305,7 @@ describe("Excalidraw server", () => {
 			"readScene",
 			"saveScene",
 			"listScenes",
+			"listProjectScenes",
 			"ping",
 		]);
 		await expect(host.harness.behavior.callRpc("ping", null)).resolves.toEqual({
