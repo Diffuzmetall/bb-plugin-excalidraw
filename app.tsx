@@ -603,6 +603,16 @@ export function ExcalidrawFileOpener({
 	);
 }
 
+function sceneFileName(path: string): string {
+	return path.split("/").at(-1) ?? path;
+}
+
+function sceneLocation(entry: ProjectSceneEntry): string {
+	const separator = entry.path.lastIndexOf("/");
+	const folder = separator > 0 ? entry.path.slice(0, separator) : null;
+	return [entry.projectName, folder].filter(Boolean).join(" · ");
+}
+
 function ExcalidrawSceneSwitcher({
 	entries,
 	selectedKey,
@@ -616,9 +626,13 @@ function ExcalidrawSceneSwitcher({
 }) {
 	const [query, setQuery] = useState("");
 	const [open, setOpen] = useState(false);
+	const switcherRef = useRef<HTMLDivElement>(null);
+	const triggerRef = useRef<HTMLButtonElement>(null);
+	const searchRef = useRef<HTMLInputElement>(null);
 	const switcherId = useId();
 	const searchId = `excalidraw-scene-search-${switcherId}`;
 	const resultsId = `excalidraw-scene-results-${switcherId}`;
+	const blockedNoticeId = `excalidraw-scene-blocked-${switcherId}`;
 	const selected =
 		entries.find((entry) => projectSceneKey(entry) === selectedKey) ?? null;
 	const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -630,71 +644,113 @@ function ExcalidrawSceneSwitcher({
 			)
 		: entries;
 
+	useEffect(() => {
+		if (!open) return;
+		const focusFrame = requestAnimationFrame(() => searchRef.current?.focus());
+		const closeOutside = (event: PointerEvent) => {
+			if (!switcherRef.current?.contains(event.target as Node)) {
+				setOpen(false);
+				setQuery("");
+			}
+		};
+		const closeOnEscape = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") return;
+			setOpen(false);
+			setQuery("");
+			triggerRef.current?.focus();
+		};
+		document.addEventListener("pointerdown", closeOutside);
+		document.addEventListener("keydown", closeOnEscape);
+		return () => {
+			cancelAnimationFrame(focusFrame);
+			document.removeEventListener("pointerdown", closeOutside);
+			document.removeEventListener("keydown", closeOnEscape);
+		};
+	}, [open]);
+
 	return (
-		<div className="excalidraw-scene-switcher">
-			<label className="excalidraw-visually-hidden" htmlFor={searchId}>
-				Search Excalidraw files
-			</label>
-			<input
-				id={searchId}
-				type="search"
-				value={query}
-				placeholder={
-					selected
-						? (selected.path.split("/").at(-1) ?? selected.path)
-						: "Search drawings"
-				}
-				aria-label="Search Excalidraw files"
+		<div ref={switcherRef} className="excalidraw-scene-switcher">
+			<button
+				ref={triggerRef}
+				type="button"
+				className="excalidraw-scene-trigger"
 				aria-expanded={open}
 				aria-controls={resultsId}
-				onFocus={() => setOpen(true)}
-				onClick={() => setOpen(true)}
-				onChange={(event) => {
-					setQuery(event.currentTarget.value);
-					setOpen(true);
+				aria-describedby={open && disabled ? blockedNoticeId : undefined}
+				aria-haspopup="dialog"
+				title={selected ? `${selected.projectName} — ${selected.path}` : undefined}
+				onClick={() => {
+					if (open) setQuery("");
+					setOpen(!open);
 				}}
-				onBlur={() => window.setTimeout(() => setOpen(false), 120)}
-			/>
+			>
+				<span>{selected ? sceneFileName(selected.path) : "Choose drawing"}</span>
+				<svg viewBox="0 0 16 16" aria-hidden="true">
+					<path d="m4 6 4 4 4-4" />
+				</svg>
+			</button>
 			{open ? (
-				<div
-					id={resultsId}
-					className="excalidraw-scene-results"
-					role="listbox"
-					aria-label="Excalidraw files"
-				>
-					{visibleEntries.length ? (
-						visibleEntries.map((entry) => {
-							const key = projectSceneKey(entry);
-							return (
+				<div className="excalidraw-scene-popover" role="dialog" aria-label="Choose drawing">
+					<label className="excalidraw-visually-hidden" htmlFor={searchId}>
+						Search Excalidraw files
+					</label>
+					<div className="excalidraw-scene-search">
+						<svg viewBox="0 0 16 16" aria-hidden="true">
+							<circle cx="7" cy="7" r="4.25" />
+							<path d="m10.25 10.25 3 3" />
+						</svg>
+						<input
+							ref={searchRef}
+							id={searchId}
+							type="search"
+							value={query}
+							placeholder="Search drawings"
+							autoComplete="off"
+							spellCheck={false}
+							aria-label="Search Excalidraw files"
+							aria-controls={resultsId}
+							onChange={(event) => setQuery(event.currentTarget.value)}
+						/>
+					</div>
+					{disabled ? (
+						<p id={blockedNoticeId} className="excalidraw-scene-blocked" role="status">
+							Save or resolve changes before switching.
+						</p>
+					) : null}
+					<div
+						id={resultsId}
+						className="excalidraw-scene-results"
+						aria-label="Excalidraw files"
+					>
+						{visibleEntries.length ? (
+							visibleEntries.map((entry) => {
+								const key = projectSceneKey(entry);
+								return (
 									<button
 										key={key}
 										type="button"
-										role="option"
-										aria-selected={key === selectedKey}
+										aria-current={key === selectedKey ? "true" : undefined}
 										disabled={disabled && key !== selectedKey}
 										title={
 											disabled && key !== selectedKey
 												? "Save or resolve changes before switching"
-												: undefined
+												: entry.path
 										}
-										onMouseDown={(event) => event.preventDefault()}
 										onClick={() => {
 											setQuery("");
 											setOpen(false);
 											onSelect(entry);
 										}}
 									>
-										<span>{entry.path}</span>
-										<small>
-											{entry.projectName}
-											{entry.format === "obsidian-markdown" ? " · Obsidian" : ""}
-										</small>
+										<span>{sceneFileName(entry.path)}</span>
+										<small>{sceneLocation(entry)}</small>
 									</button>
-							);
-						})
-					) : (
-						<div className="excalidraw-scene-results-empty">No drawings found</div>
-					)}
+								);
+							})
+						) : (
+							<div className="excalidraw-scene-results-empty">No drawings found</div>
+						)}
+					</div>
 				</div>
 			) : null}
 		</div>

@@ -379,14 +379,17 @@ describe("Excalidraw app registration", () => {
 		);
 		unmountRendered = rendered.unmount;
 
-		const search = (await rendered.findByRole("searchbox", {
-			name: "Search Excalidraw files",
-		})) as HTMLInputElement;
-		await act(async () => {
-			search.focus();
+		const trigger = await rendered.findByRole("button", {
+			name: "Map.excalidraw.md",
 		});
-		const drawingButton = await rendered.findByRole("option", {
-			name: /Excalidraw\/Map\.excalidraw\.md/,
+		await act(async () => {
+			trigger.click();
+		});
+		await rendered.findByRole("searchbox", {
+			name: "Search Excalidraw files",
+		});
+		const drawingButton = await rendered.findByRole("button", {
+			name: /Map\.excalidraw\.md.*Obsidian Vault/,
 		});
 		await rendered.findByTestId("mock-edit");
 		drawingButton.click();
@@ -418,12 +421,14 @@ describe("Excalidraw app registration", () => {
 		});
 		const saveButton = await rendered.findByRole("button", { name: "Save" });
 		await act(async () => {
-			(rendered.getByRole("searchbox", {
-				name: "Search Excalidraw files",
-			}) as HTMLInputElement).click();
+			trigger.click();
 		});
-		const otherDrawingButton = rendered.getByRole("option", {
-			name: /Excalidraw\/Other\.excalidraw/,
+		const blockedNotice = rendered.getByText(
+			"Save or resolve changes before switching.",
+		);
+		expect(blockedNotice.getAttribute("role")).toBe("status");
+		const otherDrawingButton = rendered.getByRole("button", {
+			name: /Other\.excalidraw.*Obsidian Vault/,
 		}) as HTMLButtonElement;
 		expect(otherDrawingButton.disabled).toBe(true);
 		otherDrawingButton.click();
@@ -434,11 +439,8 @@ describe("Excalidraw app registration", () => {
 		});
 		await vi.waitFor(() => expect(saveScene).toHaveBeenCalledOnce());
 		await vi.waitFor(() => expect(otherDrawingButton.disabled).toBe(false));
-		await act(async () => {
-			search.click();
-		});
-		const reopenedOtherDrawingButton = rendered.getByRole("option", {
-			name: /Excalidraw\/Other\.excalidraw/,
+		const reopenedOtherDrawingButton = rendered.getByRole("button", {
+			name: /Other\.excalidraw.*Obsidian Vault/,
 		}) as HTMLButtonElement;
 
 		await act(async () => {
@@ -497,18 +499,31 @@ describe("Excalidraw app registration", () => {
 		unmountRendered = rendered.unmount;
 
 		await rendered.findByTestId("mock-edit");
+		const trigger = await rendered.findByRole("button", {
+			name: "AI+MAN.excalidraw",
+		});
+		expect(trigger.title).toBe("brain — concepts/AI+MAN.excalidraw");
+		await act(async () => {
+			trigger.click();
+		});
 		const picker = (await rendered.findByRole("searchbox", {
 			name: "Search Excalidraw files",
 		})) as HTMLInputElement;
-		expect(picker.placeholder).toBe("AI+MAN.excalidraw");
-		await act(async () => {
-			picker.focus();
-		});
+		expect(picker.placeholder).toBe("Search drawings");
 		expect(
-			(await rendered.findByRole("option", {
-				name: /concepts\/AI\+MAN\.excalidraw/,
+			(await rendered.findByRole("button", {
+				name: /AI\+MAN\.excalidraw.*brain.*concepts/,
 			})),
 		).toBeTruthy();
+		await act(async () => {
+			document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+		});
+		expect(document.activeElement).toBe(trigger);
+		expect(
+			rendered.queryByRole("searchbox", {
+				name: "Search Excalidraw files",
+			}),
+		).toBeNull();
 		expect(listProjectScenes).toHaveBeenCalledOnce();
 		expect(rendered.inspection.rpcCalls[0]).toMatchObject({
 			method: "listProjectScenes",

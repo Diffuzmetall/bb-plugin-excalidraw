@@ -6,7 +6,7 @@ import type {
 	ExcalidrawProps,
 } from "@excalidraw/excalidraw/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { userEvent } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 
 const sourceKey = "workspace:browser-env";
 const initialSha = "a".repeat(64);
@@ -98,6 +98,48 @@ vi.mock("@get-bb/plugin-sdk/app", () => {
 			},
 		},
 	};
+	const rpc = {
+		call: async (method: string, input: object) => {
+			if (method === "readScene") {
+				await readScenePromise;
+				return browserReadSceneResult;
+			}
+			if (method === "saveScene") {
+				saveSceneCalls.push(input);
+				return {
+					status: "written" as const,
+					sha256: "d".repeat(64),
+					sizeBytes: browserSceneContent.length,
+				};
+			}
+			if (method === "listProjectScenes") {
+				return {
+					status: "ready" as const,
+					entries: [
+						{
+							projectId: "project-brain",
+							projectName: "brain",
+							path: "concepts/pai-gas-city.excalidraw",
+							format: "native" as const,
+						},
+						{
+							projectId: "project-obsidian",
+							projectName: "Obsidian Vault",
+							path: "Excalidraw/Схема заработка.excalidraw.md",
+							format: "obsidian-markdown" as const,
+						},
+					],
+					truncatedProjects: [],
+					unavailableProjects: [],
+				};
+			}
+			return {
+				status: "ready" as const,
+				paths: ["browser.excalidraw"],
+				truncated: false,
+			};
+		},
+	};
 	return {
 		definePluginApp(register: (value: typeof app) => void) {
 			register(app);
@@ -113,27 +155,7 @@ vi.mock("@get-bb/plugin-sdk/app", () => {
 			return "connected" as const;
 		},
 		useRpc() {
-			return {
-				call: async (method: string, input: object) => {
-					if (method === "readScene") {
-						await readScenePromise;
-						return browserReadSceneResult;
-					}
-					if (method === "saveScene") {
-						saveSceneCalls.push(input);
-						return {
-							status: "written" as const,
-							sha256: "d".repeat(64),
-							sizeBytes: browserSceneContent.length,
-						};
-					}
-					return {
-						status: "ready" as const,
-						paths: ["browser.excalidraw"],
-						truncated: false,
-					};
-				},
-			};
+			return rpc;
 		},
 	};
 });
@@ -141,8 +163,12 @@ vi.mock("@get-bb/plugin-sdk/app", () => {
 (
 	globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
-const { ExcalidrawFileOpener, handleLinkOpen, isAllowedExternalLink } =
-	await import("./app");
+const {
+	ExcalidrawFileOpener,
+	ExcalidrawPanel,
+	handleLinkOpen,
+	isAllowedExternalLink,
+} = await import("./app");
 const { CaptureUpdateAction } = await import("@excalidraw/excalidraw");
 
 const source = {
@@ -505,5 +531,57 @@ describe("Excalidraw opener Chromium gates", () => {
 		expect(saveSceneCalls).toEqual([]);
 		await act(async () => reopenedRoot.unmount());
 		reopenedContainer.remove();
+	});
+
+	it("keeps the drawing switcher compact and readable", async () => {
+		await page.viewport(1280, 800);
+		const container = document.createElement("div");
+		container.style.width = "1280px";
+		container.style.height = "800px";
+		document.body.append(container);
+		const root = createRoot(container);
+		await act(async () => {
+			root.render(
+				createElement(ExcalidrawPanel, {
+					threadId: "browser-thread",
+					params: null,
+				}),
+			);
+		});
+		await vi.waitFor(() => {
+			expect(container.querySelector("canvas")).not.toBeNull();
+		});
+		const trigger = container.querySelector<HTMLElement>(
+			".excalidraw-scene-trigger",
+		);
+		if (!trigger) throw new Error("missing drawing switcher trigger");
+		const triggerBox = trigger.getBoundingClientRect();
+		expect(triggerBox.width).toBeLessThanOrEqual(200);
+		expect(triggerBox.height).toBeLessThanOrEqual(34);
+
+		await act(async () => trigger.click());
+		const popover = container.querySelector<HTMLElement>(
+			".excalidraw-scene-popover",
+		);
+		if (!popover) throw new Error("missing drawing switcher popover");
+		const popoverBox = popover.getBoundingClientRect();
+		expect(popoverBox.width).toBeLessThanOrEqual(260);
+		expect(popoverBox.height).toBeLessThanOrEqual(280);
+		expect(popover.textContent).toContain("pai-gas-city.excalidraw");
+		expect(popover.textContent).toContain("Схема заработка.excalidraw.md");
+		await page.screenshot({
+			element: container,
+			path: "__screenshots__/compact-drawing-switcher.png",
+		});
+
+		container.style.width = "280px";
+		const narrowContainerBox = container.getBoundingClientRect();
+		const narrowPopoverBox = popover.getBoundingClientRect();
+		expect(narrowPopoverBox.right).toBeLessThanOrEqual(
+			narrowContainerBox.right,
+		);
+
+		await act(async () => root.unmount());
+		container.remove();
 	});
 });
