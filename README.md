@@ -37,7 +37,7 @@ An `.excalidraw` file is JSON, but treating it as generic JSON loses the interac
 | Capability | Behavior |
 | --- | --- |
 | Native file opener | Opens `.excalidraw` and Obsidian `.excalidraw.md` files as an interactive canvas |
-| Drawings library | Lists scenes across registered BB projects and switches between them without leaving the panel |
+| Excalidraw library | Lists scenes across registered BB projects and switches between them from a compact canvas overlay |
 | Workspace launcher | **New tab → Actions → Excalidraw** discovers and switches between existing workspace drawings |
 | Native theme control | The canvas menu provides Excalidraw's light, dark, and system selector |
 | Diagram-design skill | Teaches agents how to plan workflows, architectures, timelines, decisions, comparisons, and feedback loops |
@@ -46,7 +46,79 @@ An `.excalidraw` file is JSON, but treating it as generic JSON loses the interac
 | Safe concurrency | Uses expected revisions, writer nonces, realtime invalidation, and visible dirty conflicts |
 | Scene preservation | Preserves native app state, files, images, and unknown properties that semantic operations do not target |
 | Model-safe reads | Omits raw scene bytes, base64 image bodies, and deleted Excalidraw tombstones |
-| Workspace authority | Resolves the host and workspace from the active BB thread and environment |
+| Project authority | Resolves a selected scene through its registered BB project source; host-only sources remain read-only |
+
+## Cross-project library and Obsidian editing
+
+The **Excalidraw** navigation panel is a full-canvas workspace, not a second file-management screen. A compact file picker sits beside Excalidraw's main-menu button, matches that button's height, and aligns with the top edge of the primary toolbar island. The picker shows only the current file's basename until opened; its popover contains search and dense results with `project · folder` metadata. This keeps the drawing tools visually dominant while still making every registered scene reachable.
+
+The picker supports:
+
+- case-insensitive search across project names and relative paths;
+- native `.excalidraw` files and Obsidian `.excalidraw.md` notes;
+- close-on-outside-click and close-on-Escape behavior, including focus restoration;
+- responsive popover sizing bounded by the containing BB panel rather than the browser viewport;
+- a visible explanation when unsaved edits temporarily block switching;
+- filename and path truncation without losing the full path tooltip.
+
+Switching is intentionally disabled while the current canvas is dirty. Search remains available so the catalog can still be inspected, but another drawing cannot replace the unsaved draft. Save or resolve the current conflict first.
+
+### How discovery works
+
+The plugin does not scan arbitrary directories or relax workspace boundaries. The server asks BB for registered projects, then asks each project source for matching workspace paths. Every catalog entry carries the owning `projectId`, display name, normalized relative path, and scene format.
+
+```text
+BB projects.list
+      │
+      ├─► project A source ─► projects.paths ─► *.excalidraw
+      ├─► project B source ─► projects.paths ─► *.excalidraw.md
+      └─► project N source ─► projects.paths
+                                      │
+                                      ▼
+                        normalized, sorted catalog
+                                      │
+                                      ▼
+                         compact searchable picker
+```
+
+Results are sorted deterministically. Per-project limits are reported to the UI as truncation notices, and unavailable projects are reported without making healthy projects disappear.
+
+### How opening and saving stay authoritative
+
+A selected catalog entry is encoded in the panel route as its project ID plus encoded relative path. On read or save, explicit project authority takes precedence over the ambient thread environment. This prevents a scene selected from another project—for example, an Obsidian vault—from being looked up in the current plugin-development workspace.
+
+For compatibility with older saved tabs that contain only a basename, the resolver may use a basename fallback only when exactly one catalog entry matches. Ambiguous names are never guessed.
+
+```text
+picker entry { projectId, path, format }
+                 │
+                 ▼
+      authoritative BB project source
+                 │
+          read full file + SHA-256
+                 │
+        ┌────────┴─────────┐
+        │                  │
+ native JSON       Obsidian Markdown codec
+        │                  │
+        └────────┬─────────┘
+                 ▼
+          Excalidraw canvas
+                 │ dirty draft
+                 ▼
+       preserve / encode source format
+                 │ expected SHA-256
+                 ▼
+          compare-and-swap write
+```
+
+Project-backed sources are writable when BB grants write capability. Host-backed sources remain read-only. Every save uses the SHA-256 of the complete source file, so a concurrent edit produces a conflict instead of a silent overwrite.
+
+### Obsidian `.excalidraw.md` preservation
+
+Obsidian Excalidraw notes are Markdown envelopes, not plain scene JSON. The codec reads both `json` and `compressed-json` drawing payloads. When saving, it replaces only the Drawing payload and preserves the rest of the note—including frontmatter, explanatory Markdown, headings, links, and plugin metadata. Compare-and-swap protection covers the complete Markdown file, not only the decoded scene.
+
+Ordinary `.md` files are not claimed by this plugin and continue to open in BB's normal Markdown viewer.
 
 ## Five-minute quick start
 
@@ -75,7 +147,7 @@ To open an existing scene:
 
 1. Choose **Excalidraw** as the default opener for `.excalidraw` files under **Settings → Files**. Markdown files ending in `.excalidraw.md` are routed to the canvas automatically; ordinary Markdown still uses BB's original viewer.
 2. Open the file from BB Files, or choose **New tab → Actions → Excalidraw**.
-3. If the workspace contains several drawings, select one from the **Drawing** menu.
+3. If registered BB projects contain several drawings, select one from the compact filename picker beside Excalidraw's main-menu button.
 
 The launcher lists existing scenes; it does not invent an empty file. Create a new drawing with an agent or the CLI first.
 
@@ -428,17 +500,22 @@ npm run test:browser
 bb plugin build .
 ```
 
-`npm run check` runs typechecking and the unit/integration suite. Browser tests exercise the real canvas, native theme control, accessibility, link policy, external reconciliation, dirty conflicts, Reload, and reopen behavior.
+`npm run check` verifies that the committed Excalidraw stylesheet matches the installed dependency, then runs typechecking and the unit/integration suite. Browser tests exercise the real canvas, native theme control, accessibility, link policy, external reconciliation, dirty conflicts, Reload, and reopen behavior.
+
+### Updating Excalidraw's vendored CSS
+
+BB installs Git plugins with lifecycle scripts disabled, and `bb plugin build` does not run `vendor:css`. Therefore `excalidraw.css` is a committed build input, not an install-time artifact. When upgrading `@excalidraw/excalidraw`:
+
+1. run `npm install` so `package.json` and `package-lock.json` agree;
+2. run `npm run vendor:css` to copy the production stylesheet and inline its Assistant fonts;
+3. review and commit the resulting `excalidraw.css` change;
+4. run `npm run check` and `bb plugin build .`.
+
+CI runs `npm run check:vendor-css` through `npm run check` and fails if the committed stylesheet no longer matches the installed Excalidraw version. Do not move this generation to `postinstall`: Git installs intentionally use `--ignore-scripts`, and keeping the reviewed stylesheet in Git makes installation reproducible.
 
 CI also installs only production dependencies and builds the plugin with the
 BB 0.35.1 CLI, matching the Git-source installation path used by released
 tags.
-
-After upgrading `@excalidraw/excalidraw`, regenerate and review the vendored stylesheet:
-
-```bash
-npm run vendor:css
-```
 
 Before publishing a tag, verify a runtime-only source build:
 

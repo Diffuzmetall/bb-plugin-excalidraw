@@ -1,5 +1,6 @@
 .pi/
 .codegraph/
+types/
 node_modules/
 dist/
 !vendor/bb-plugin-sdk/dist/
