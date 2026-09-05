@@ -555,9 +555,21 @@ describe("Excalidraw opener Chromium gates", () => {
 			".excalidraw-scene-trigger",
 		);
 		if (!trigger) throw new Error("missing drawing switcher trigger");
+		const menuButton = container.querySelector<HTMLElement>(
+			".dropdown-menu-button",
+		);
+		const toolbar = container.querySelector<HTMLElement>(".Island.App-toolbar");
+		if (!menuButton) throw new Error("missing Excalidraw main menu button");
+		if (!toolbar) throw new Error("missing Excalidraw toolbar");
 		const triggerBox = trigger.getBoundingClientRect();
+		const menuButtonBox = menuButton.getBoundingClientRect();
+		const toolbarBox = toolbar.getBoundingClientRect();
 		expect(triggerBox.width).toBeLessThanOrEqual(200);
-		expect(triggerBox.height).toBeLessThanOrEqual(34);
+		expect(Math.abs(triggerBox.top - menuButtonBox.top)).toBeLessThanOrEqual(1);
+		expect(Math.abs(triggerBox.top - toolbarBox.top)).toBeLessThanOrEqual(1);
+		expect(Math.abs(triggerBox.height - menuButtonBox.height)).toBeLessThanOrEqual(
+			1,
+		);
 
 		await act(async () => trigger.click());
 		const popover = container.querySelector<HTMLElement>(
