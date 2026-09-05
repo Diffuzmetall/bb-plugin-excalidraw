@@ -14,7 +14,7 @@ import {
 	type PluginNavPanelProps,
 	type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ExcalidrawRpcContract } from "./server";
 import {
 	isSaveShortcut,
@@ -603,6 +603,104 @@ export function ExcalidrawFileOpener({
 	);
 }
 
+function ExcalidrawSceneSwitcher({
+	entries,
+	selectedKey,
+	onSelect,
+	disabled = false,
+}: {
+	entries: ProjectSceneEntry[];
+	selectedKey: string | null;
+	onSelect: (entry: ProjectSceneEntry) => void;
+	disabled?: boolean;
+}) {
+	const [query, setQuery] = useState("");
+	const [open, setOpen] = useState(false);
+	const switcherId = useId();
+	const searchId = `excalidraw-scene-search-${switcherId}`;
+	const resultsId = `excalidraw-scene-results-${switcherId}`;
+	const selected =
+		entries.find((entry) => projectSceneKey(entry) === selectedKey) ?? null;
+	const normalizedQuery = query.trim().toLocaleLowerCase();
+	const visibleEntries = normalizedQuery
+		? entries.filter((entry) =>
+				`${entry.projectName}/${entry.path}`
+					.toLocaleLowerCase()
+					.includes(normalizedQuery),
+			)
+		: entries;
+
+	return (
+		<div className="excalidraw-scene-switcher">
+			<label className="excalidraw-visually-hidden" htmlFor={searchId}>
+				Search Excalidraw files
+			</label>
+			<input
+				id={searchId}
+				type="search"
+				value={query}
+				placeholder={
+					selected
+						? `${selected.projectName} — ${selected.path}`
+						: "Search Excalidraw files"
+				}
+				aria-label="Search Excalidraw files"
+				aria-expanded={open}
+				aria-controls={resultsId}
+				onFocus={() => setOpen(true)}
+				onClick={() => setOpen(true)}
+				onChange={(event) => {
+					setQuery(event.currentTarget.value);
+					setOpen(true);
+				}}
+				onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+			/>
+			{open ? (
+				<div
+					id={resultsId}
+					className="excalidraw-scene-results"
+					role="listbox"
+					aria-label="Excalidraw files"
+				>
+					{visibleEntries.length ? (
+						visibleEntries.map((entry) => {
+							const key = projectSceneKey(entry);
+							return (
+									<button
+										key={key}
+										type="button"
+										role="option"
+										aria-selected={key === selectedKey}
+										disabled={disabled && key !== selectedKey}
+										title={
+											disabled && key !== selectedKey
+												? "Save or resolve changes before switching"
+												: undefined
+										}
+										onMouseDown={(event) => event.preventDefault()}
+										onClick={() => {
+											setQuery("");
+											setOpen(false);
+											onSelect(entry);
+										}}
+									>
+										<span>{entry.path}</span>
+										<small>
+											{entry.projectName}
+											{entry.format === "obsidian-markdown" ? " · Obsidian" : ""}
+										</small>
+									</button>
+							);
+						})
+					) : (
+						<div className="excalidraw-scene-results-empty">No drawings found</div>
+					)}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
 export function ExcalidrawPanel(_props: PluginThreadPanelProps) {
 	const rpc = useRpc<ExcalidrawRpcContract>();
 	const [entries, setEntries] = useState<ProjectSceneEntry[]>([]);
@@ -681,24 +779,16 @@ export function ExcalidrawPanel(_props: PluginThreadPanelProps) {
 
 	return (
 		<div className="excalidraw-action-panel">
-			<div className="excalidraw-scene-picker">
-				<label htmlFor="excalidraw-scene-path">Drawing</label>
-				<select
-					id="excalidraw-scene-path"
-					value={projectSceneKey(selected)}
-					disabled={switchBlocked}
-					title={switchBlocked ? "Save or resolve changes before switching" : undefined}
-					onChange={(event) => setSelectedKey(event.currentTarget.value)}
-				>
-					{entries.map((entry) => (
-						<option key={projectSceneKey(entry)} value={projectSceneKey(entry)}>
-							{entry.projectName} — {entry.path}
-						</option>
-					))}
-				</select>
-				{listNotice ? <span>{listNotice}</span> : null}
-			</div>
 			<div className="excalidraw-action-canvas">
+				<ExcalidrawSceneSwitcher
+					entries={entries}
+					selectedKey={selectedKey}
+					disabled={switchBlocked}
+					onSelect={(entry) => setSelectedKey(projectSceneKey(entry))}
+				/>
+				{listNotice ? (
+					<div className="excalidraw-scene-notice">{listNotice}</div>
+				) : null}
 				<ExcalidrawFileOpener
 					key={projectSceneKey(selected)}
 					path={selected.path}
@@ -753,7 +843,6 @@ export function ExcalidrawLibrary({ subPath }: PluginNavPanelProps) {
 	const rpc = useRpc<ExcalidrawRpcContract>();
 	const navigate = useBbNavigate();
 	const [entries, setEntries] = useState<ProjectSceneEntry[]>([]);
-	const [query, setQuery] = useState("");
 	const [selectedKey, setSelectedKey] = useState<string | null>(null);
 	const [switchBlocked, setSwitchBlocked] = useState(false);
 	const [loading, setLoading] = useState(true);
@@ -803,88 +892,45 @@ export function ExcalidrawLibrary({ subPath }: PluginNavPanelProps) {
 		if (selectedFromRoute) setSelectedKey(projectSceneKey(selectedFromRoute));
 	}, [selectedFromRoute]);
 
-	const normalizedQuery = query.trim().toLocaleLowerCase();
-	const visibleEntries = normalizedQuery
-		? entries.filter((entry) =>
-				`${entry.projectName}/${entry.path}`
-					.toLocaleLowerCase()
-					.includes(normalizedQuery),
-			)
-		: entries;
-
 	return (
 		<div className="excalidraw-library">
-			<aside className="excalidraw-library-sidebar">
-				<div className="excalidraw-library-heading">
-					<strong>Drawings</strong>
-					<span>{entries.length}</span>
-				</div>
-				<input
-					type="search"
-					value={query}
-					onChange={(event) => setQuery(event.currentTarget.value)}
-					placeholder="Search drawings"
-					aria-label="Search drawings"
-				/>
-				{message ? <p className="excalidraw-library-notice">{message}</p> : null}
-				{loading ? (
-					<div className="excalidraw-library-empty" role="status">
-						Loading drawings…
-					</div>
-				) : visibleEntries.length === 0 ? (
-					<div className="excalidraw-library-empty" role="status">
-						{entries.length === 0
-							? "No Excalidraw files found in registered projects."
-							: "No drawings match this search."}
-					</div>
-				) : (
-					<nav className="excalidraw-library-list" aria-label="Excalidraw files">
-						{visibleEntries.map((entry) => {
-							const active = selected === entry;
-							return (
-								<button
-									key={`${entry.projectId}:${entry.path}`}
-									type="button"
-									className={active ? "is-active" : undefined}
-									disabled={switchBlocked && !active}
-									title={
-										switchBlocked && !active
-											? "Save or resolve changes before switching"
-											: undefined
-									}
-									onClick={() => {
-										setSelectedKey(projectSceneKey(entry));
-										navigate.toPluginPanel("excalidraw", {
-											subPath: projectSceneSubPath(entry),
-										});
-									}}
-								>
-									<span>{entry.path}</span>
-									<small>
-										{entry.projectName}
-										{entry.format === "obsidian-markdown" ? " · Obsidian" : ""}
-									</small>
-								</button>
-							);
-						})}
-					</nav>
-				)}
-			</aside>
 			<main className="excalidraw-library-canvas">
-				{selected ? (
-					<ExcalidrawFileOpener
-						key={`${selected.projectId}:${selected.path}`}
-						path={selected.path}
-						onSwitchSafetyChange={setSwitchBlocked}
-						source={{
-							kind: "workspace",
-							threadId: null,
-							environmentId: null,
-							projectId: selected.projectId,
-						}}
-					/>
+				{loading ? (
+					<div className="excalidraw-panel-state" role="status">
+						Loading Excalidraw files…
+					</div>
+				) : selected ? (
+					<>
+						<ExcalidrawSceneSwitcher
+							entries={entries}
+							selectedKey={selectedKey ?? projectSceneKey(selected)}
+							disabled={switchBlocked}
+							onSelect={(entry) => {
+								setSelectedKey(projectSceneKey(entry));
+								navigate.toPluginPanel("excalidraw", {
+									subPath: projectSceneSubPath(entry),
+								});
+							}}
+						/>
+						{message ? (
+							<div className="excalidraw-scene-notice">{message}</div>
+						) : null}
+						<ExcalidrawFileOpener
+							key={`${selected.projectId}:${selected.path}`}
+							path={selected.path}
+							onSwitchSafetyChange={setSwitchBlocked}
+							source={{
+								kind: "workspace",
+								threadId: null,
+								environmentId: null,
+								projectId: selected.projectId,
+							}}
+						/>
+					</>
 				) : (
-					<div className="excalidraw-panel-state">Select a drawing to preview it.</div>
+					<div className="excalidraw-panel-state" role="status">
+						{message ?? "No Excalidraw files found in registered projects."}
+					</div>
 				)}
 			</main>
 		</div>
@@ -903,7 +949,7 @@ export function ExcalidrawFileRouter({
 export default definePluginApp((app) => {
 	app.slots.navPanel({
 		id: "excalidraw-library",
-		title: "Drawings",
+		title: "Excalidraw",
 		icon: "Shapes",
 		path: "excalidraw",
 		component: ExcalidrawLibrary,

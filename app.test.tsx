@@ -294,7 +294,7 @@ describe("Excalidraw app registration", () => {
 		expect(app.navPanels).toHaveLength(1);
 		expect(app.navPanels[0]).toMatchObject({
 			id: "excalidraw-library",
-			title: "Drawings",
+			title: "Excalidraw",
 			path: "excalidraw",
 		});
 		expect(app.threadPanelActions).toHaveLength(1);
@@ -379,7 +379,13 @@ describe("Excalidraw app registration", () => {
 		);
 		unmountRendered = rendered.unmount;
 
-		const drawingButton = await rendered.findByRole("button", {
+		const search = (await rendered.findByRole("searchbox", {
+			name: "Search Excalidraw files",
+		})) as HTMLInputElement;
+		await act(async () => {
+			search.focus();
+		});
+		const drawingButton = await rendered.findByRole("option", {
 			name: /Excalidraw\/Map\.excalidraw\.md/,
 		});
 		await rendered.findByTestId("mock-edit");
@@ -411,7 +417,12 @@ describe("Excalidraw app registration", () => {
 			);
 		});
 		const saveButton = await rendered.findByRole("button", { name: "Save" });
-		const otherDrawingButton = rendered.getByRole("button", {
+		await act(async () => {
+			(rendered.getByRole("searchbox", {
+				name: "Search Excalidraw files",
+			}) as HTMLInputElement).click();
+		});
+		const otherDrawingButton = rendered.getByRole("option", {
 			name: /Excalidraw\/Other\.excalidraw/,
 		}) as HTMLButtonElement;
 		expect(otherDrawingButton.disabled).toBe(true);
@@ -423,9 +434,15 @@ describe("Excalidraw app registration", () => {
 		});
 		await vi.waitFor(() => expect(saveScene).toHaveBeenCalledOnce());
 		await vi.waitFor(() => expect(otherDrawingButton.disabled).toBe(false));
+		await act(async () => {
+			search.click();
+		});
+		const reopenedOtherDrawingButton = rendered.getByRole("option", {
+			name: /Excalidraw\/Other\.excalidraw/,
+		}) as HTMLButtonElement;
 
 		await act(async () => {
-			otherDrawingButton.click();
+			reopenedOtherDrawingButton.click();
 		});
 		await vi.waitFor(() => {
 			expect(readScene).toHaveBeenLastCalledWith({
@@ -480,13 +497,18 @@ describe("Excalidraw app registration", () => {
 		unmountRendered = rendered.unmount;
 
 		await rendered.findByTestId("mock-edit");
-		const picker = (await rendered.findByLabelText(
-			"Drawing",
-		)) as HTMLSelectElement;
-		expect(picker.value).toBe("project-brain:concepts/AI+MAN.excalidraw");
-		expect(picker.options[0]?.textContent).toBe(
-			"brain — concepts/AI+MAN.excalidraw",
-		);
+		const picker = (await rendered.findByRole("searchbox", {
+			name: "Search Excalidraw files",
+		})) as HTMLInputElement;
+		expect(picker.placeholder).toBe("brain — concepts/AI+MAN.excalidraw");
+		await act(async () => {
+			picker.focus();
+		});
+		expect(
+			(await rendered.findByRole("option", {
+				name: /concepts\/AI\+MAN\.excalidraw/,
+			})),
+		).toBeTruthy();
 		expect(listProjectScenes).toHaveBeenCalledOnce();
 		expect(rendered.inspection.rpcCalls[0]).toMatchObject({
 			method: "listProjectScenes",
