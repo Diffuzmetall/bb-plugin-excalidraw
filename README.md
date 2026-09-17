@@ -16,7 +16,7 @@
 </p>
 
 ```bash
-bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.1.1 --yes
+bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.0 --yes
 ```
 
 > If your BB release already bundles Excalidraw, install the bundled copy with `bb plugin install excalidraw --yes` instead. Official plugin IDs cannot be shadowed by another installation.
@@ -36,7 +36,7 @@ An `.excalidraw` file is JSON, but treating it as generic JSON loses the interac
 
 | Capability | Behavior |
 | --- | --- |
-| Native file opener | Opens `.excalidraw` and Obsidian `.excalidraw.md` files as an interactive canvas |
+| Native file opener | Opens `.excalidraw` files as an interactive canvas; Obsidian `.excalidraw.md` notes open from the Excalidraw picker |
 | Excalidraw library | Lists scenes across registered BB projects and switches between them from a compact canvas overlay |
 | Workspace launcher | **New tab → Actions → Excalidraw** discovers and switches between existing workspace drawings |
 | Native theme control | The canvas menu provides Excalidraw's light, dark, and system selector |
@@ -118,14 +118,14 @@ Project-backed sources are writable when BB grants write capability. Host-backed
 
 Obsidian Excalidraw notes are Markdown envelopes, not plain scene JSON. The codec reads both `json` and `compressed-json` drawing payloads. When saving, it replaces only the Drawing payload and preserves the rest of the note—including frontmatter, explanatory Markdown, headings, links, and plugin metadata. Compare-and-swap protection covers the complete Markdown file, not only the decoded scene.
 
-Ordinary `.md` files are not claimed by this plugin and continue to open in BB's normal Markdown viewer.
+This plugin claims the `.excalidraw` extension and nothing else. BB resolves a file's opener from the extension after its **last** dot, so it reads `.excalidraw.md` as plain `md`: claiming `md` would divert every Markdown file here and this plugin's fallback to BB's preview would then shadow whichever Markdown opener the user picked under **Settings → Files**. Obsidian notes therefore open from the Excalidraw picker (or `bb excalidraw`), which lists them next to native scenes, and ordinary Markdown keeps its own opener.
 
 ## Five-minute quick start
 
 ### 1. Install and verify
 
 ```bash
-bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.1.1 --yes
+bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.0 --yes
 bb plugin list
 ```
 
@@ -145,7 +145,7 @@ bb plugin reload excalidraw
 
 To open an existing scene:
 
-1. Choose **Excalidraw** as the default opener for `.excalidraw` files under **Settings → Files**. Markdown files ending in `.excalidraw.md` are routed to the canvas automatically; ordinary Markdown still uses BB's original viewer.
+1. Open the drawing from the Excalidraw picker — **Excalidraw** in BB's left rail — or choose **New tab → Actions → Excalidraw**. Native `.excalidraw` files also open straight from any file link, because this plugin is BB's only `.excalidraw` opener, so **Settings → Files** needs no change. Obsidian `.excalidraw.md` notes appear in the same picker; BB cannot claim them by extension without claiming every `.md` file too (see [Obsidian `.excalidraw.md` preservation](#obsidian-excalidrawmd-preservation)).
 2. Open the file from BB Files, or choose **New tab → Actions → Excalidraw**.
 3. If registered BB projects contain several drawings, select one from the compact filename picker beside Excalidraw's main-menu button.
 
@@ -477,7 +477,7 @@ Excalidraw's production stylesheet is checked in as `excalidraw.css`, with fonts
 | Option | Use when | Command |
 | --- | --- | --- |
 | Bundled official plugin | Your BB release reserves the `excalidraw` plugin ID | `bb plugin install excalidraw --yes` |
-| Tagged Git source | BB does not bundle the plugin | `bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.1.1 --yes` |
+| Tagged Git source | BB does not bundle the plugin | `bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.0 --yes` |
 | Local path | Developing or testing this checkout | `bb plugin install . --yes` |
 
 Requirements for a source installation:

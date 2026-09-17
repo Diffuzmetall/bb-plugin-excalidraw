@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.2.0 — 2026-09-16
+
+- Claim only `.excalidraw` in the file opener: BB resolves a file by the extension after its last dot, so claiming `md` diverted every Markdown file to this plugin and its fallback to BB's preview shadowed the Markdown opener the user had chosen. Ordinary Markdown keeps its own opener; Obsidian `.excalidraw.md` notes open from the Excalidraw picker.
+
 ## 0.1.1 — 2026-08-15
 
 - Add Excalidraw's native light, dark, and system theme selector without changing scene files.

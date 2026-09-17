@@ -173,7 +173,7 @@ const source = {
 const Original = () => createElement("div", { "data-testid": "original-file" });
 const elements = [{ id: "element-1", type: "rectangle" }];
 const files = {
-	"file-1": { id: "file-1", dataURL: "data:image/png;base64,AA==" },
+	"file-1": { id: "file-1", dataURL: "data:image/png;base64,AA==" }, // ubs:ignore[js.type-coercion.loose-equality] the "==" is base64 padding, not a comparison
 };
 const scene = { elements, appState: { viewBackgroundColor: "#fff" }, files };
 const serializedScene = JSON.stringify(scene);
@@ -307,11 +307,15 @@ describe("Excalidraw app registration", () => {
 		expect(app.fileOpeners[0]).toMatchObject({
 			id: "excalidraw",
 			title: "Excalidraw",
-			extensions: ["excalidraw", "md"],
+			// Claiming `md` would divert every Markdown file here — BB resolves the
+			// extension after the last dot — and shadow the opener the user chose.
+			extensions: ["excalidraw"],
 		});
 	});
 
-	it("delegates ordinary Markdown files to BB's original viewer", async () => {
+	it("delegates a path this opener does not own", async () => {
+		// BB only routes `.excalidraw` here, but a caller may force this opener for
+		// any path, so the router still hands anything else to BB's preview.
 		const rendered = renderSlot(app.fileOpeners[0], {
 			path: "README.md",
 			source,

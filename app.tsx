@@ -1020,7 +1020,13 @@ export default definePluginApp((app) => {
 	app.slots.fileOpener({
 		id: "excalidraw",
 		title: "Excalidraw",
-		extensions: ["excalidraw", "md"],
+		// BB picks a file's opener from the extension after its LAST dot, so it sees
+		// `.excalidraw.md` as plain `md`. Claiming `md` therefore diverts every
+		// Markdown file here, and this plugin's fallback to BB's preview then shadows
+		// the Markdown opener the user chose under Settings → Files. Claiming only
+		// `.excalidraw` keeps ordinary Markdown with its owner; Obsidian notes open
+		// from the Excalidraw picker, which lists them alongside native scenes.
+		extensions: ["excalidraw"],
 		component: ExcalidrawFileRouter,
 	});
 });
