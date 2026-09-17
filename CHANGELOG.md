@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.2.1 — 2026-09-17
+
+- Import the plugin SDK from the `@bb/plugin-sdk` specifier BB supplies at runtime instead of the npm distribution name. BB's plugin build keeps that specifier external and the host maps it to its own SDK copy, so a production-only Git install builds without the published package present. The `source-build` CI job failed on the npm name, which no BB builder externalizes, and a bundle importing it cannot run on BB versions older than the rename.
+- Resolve the SDK declarations from the published package in `tsconfig.json`, and alias the canonical specifier to that package in the Vitest configs so tests keep using its `/testing` helpers.
+
 ## 0.2.0 — 2026-09-16
 
 - Claim only `.excalidraw` in the file opener: BB resolves a file by the extension after its last dot, so claiming `md` diverted every Markdown file to this plugin and its fallback to BB's preview shadowed the Markdown opener the user had chosen. Ordinary Markdown keeps its own opener; Obsidian `.excalidraw.md` notes open from the Excalidraw picker.

@@ -16,7 +16,7 @@
 </p>
 
 ```bash
-bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.0 --yes
+bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.1 --yes
 ```
 
 > If your BB release already bundles Excalidraw, install the bundled copy with `bb plugin install excalidraw --yes` instead. Official plugin IDs cannot be shadowed by another installation.
@@ -125,7 +125,7 @@ This plugin claims the `.excalidraw` extension and nothing else. BB resolves a f
 ### 1. Install and verify
 
 ```bash
-bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.0 --yes
+bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.1 --yes
 bb plugin list
 ```
 
@@ -477,7 +477,7 @@ Excalidraw's production stylesheet is checked in as `excalidraw.css`, with fonts
 | Option | Use when | Command |
 | --- | --- | --- |
 | Bundled official plugin | Your BB release reserves the `excalidraw` plugin ID | `bb plugin install excalidraw --yes` |
-| Tagged Git source | BB does not bundle the plugin | `bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.0 --yes` |
+| Tagged Git source | BB does not bundle the plugin | `bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.1 --yes` |
 | Local path | Developing or testing this checkout | `bb plugin install . --yes` |
 
 Requirements for a source installation:

@@ -81,7 +81,7 @@ vi.mock("@excalidraw/excalidraw", async (importOriginal) => {
 	};
 });
 
-vi.mock("@get-bb/plugin-sdk/app", () => {
+vi.mock("@bb/plugin-sdk/app", () => {
 	const app = {
 		fileOpeners: [] as Array<Record<string, unknown>>,
 		navPanels: [] as Array<Record<string, unknown>>,

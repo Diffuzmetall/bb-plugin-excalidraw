@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-excalidraw",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "View, edit, and safely automate Excalidraw drawings in BB.",
   "private": true,
   "license": "MIT",

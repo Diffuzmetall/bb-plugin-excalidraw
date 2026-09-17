@@ -7,6 +7,12 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM"],
     "types": ["node"],
+    // Plugin sources import the canonical `@bb/plugin-sdk*` specifier that BB
+    // supplies at runtime; the published package carries the declarations.
+    "paths": {
+      "@bb/plugin-sdk": ["./node_modules/@get-bb/plugin-sdk/bundled-types/bb-plugin-sdk.d.ts"],
+      "@bb/plugin-sdk/app": ["./node_modules/@get-bb/plugin-sdk/bundled-types/bb-plugin-sdk-app.d.ts"]
+    },
     "noEmit": true,
     "skipLibCheck": true
   },

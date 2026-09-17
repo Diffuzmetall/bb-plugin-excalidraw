@@ -13,7 +13,7 @@ import {
 	type PluginFileOpenerProps,
 	type PluginNavPanelProps,
 	type PluginThreadPanelProps,
-} from "@get-bb/plugin-sdk/app";
+} from "@bb/plugin-sdk/app";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ExcalidrawRpcContract } from "./server";
 import {
