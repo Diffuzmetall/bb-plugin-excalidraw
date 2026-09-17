@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.2.2 — 2026-09-17
+
+- Declare BB 0.43.1 — the release this plugin is developed, built, and run against — as the minimum supported BB in `engines.bb` and in the README badge/requirements, replacing the unverified 0.35.1 claim.
+- `source-build` now installs that same release as its pinned builder (`bb-app@0.43.1`, the CLI BB ships to plugin installs) and builds with it, instead of checking out the BB monorepo at a commit and installing it with pnpm. The job keeps verifying a production-only Git install at the declared minimum without depending on a repository snapshot.
+
 ## 0.2.1 — 2026-09-17
 
 - Import the plugin SDK from the `@bb/plugin-sdk` specifier BB supplies at runtime instead of the npm distribution name. BB's plugin build keeps that specifier external and the host maps it to its own SDK copy, so a production-only Git install builds without the published package present. The `source-build` CI job failed on the npm name, which no BB builder externalizes, and a bundle importing it cannot run on BB versions older than the rename.

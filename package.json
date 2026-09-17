@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-excalidraw",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "View, edit, and safely automate Excalidraw drawings in BB.",
   "private": true,
   "license": "MIT",
@@ -39,7 +39,7 @@
     "scene-adapter.ATTRIBUTION.md"
   ],
   "engines": {
-    "bb": ">=0.35.1",
+    "bb": ">=0.43.1",
     "bbPluginSdk": "^0.4.1",
     "node": ">=22.19.0"
   },

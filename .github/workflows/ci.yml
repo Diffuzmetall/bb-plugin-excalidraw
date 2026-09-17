@@ -34,21 +34,12 @@ jobs:
     steps:
       - name: Check out plugin
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Check out BB 0.35.1 builder
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: get-bb/bb
-          ref: 9f4bea88dd6c7c611f4e5205a6f23b7bbaa3707f
-          path: .bb-builder
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.19.0
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 9.15.0
       - name: Install production dependencies
         run: npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund
-      - name: Install pinned BB builder dependencies
-        run: pnpm --dir .bb-builder install --frozen-lockfile
-      - name: Build plugin with BB 0.35.1
-        run: ./.bb-builder/apps/cli/bin/bb plugin build .
+      - name: Install the minimum supported BB builder
+        run: npm install --no-save --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund bb-app@0.43.1
+      - name: Build plugin with BB 0.43.1
+        run: ./node_modules/.bin/bb plugin build .

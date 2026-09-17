@@ -11,12 +11,12 @@
 <p align="center">
   <a href="https://github.com/Diffuzmetall/bb-plugin-excalidraw/actions/workflows/ci.yml"><img src="https://github.com/Diffuzmetall/bb-plugin-excalidraw/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/BB-%3E%3D0.35.1-6c5ce7" alt="BB 0.35.1 or newer">
+  <img src="https://img.shields.io/badge/BB-%3E%3D0.43.1-6c5ce7" alt="BB 0.43.1 or newer">
   <img src="https://img.shields.io/badge/Node.js-%3E%3D22.19.0-339933" alt="Node.js 22.19 or newer">
 </p>
 
 ```bash
-bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.1 --yes
+bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.2 --yes
 ```
 
 > If your BB release already bundles Excalidraw, install the bundled copy with `bb plugin install excalidraw --yes` instead. Official plugin IDs cannot be shadowed by another installation.
@@ -125,7 +125,7 @@ This plugin claims the `.excalidraw` extension and nothing else. BB resolves a f
 ### 1. Install and verify
 
 ```bash
-bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.1 --yes
+bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.2 --yes
 bb plugin list
 ```
 
@@ -477,12 +477,12 @@ Excalidraw's production stylesheet is checked in as `excalidraw.css`, with fonts
 | Option | Use when | Command |
 | --- | --- | --- |
 | Bundled official plugin | Your BB release reserves the `excalidraw` plugin ID | `bb plugin install excalidraw --yes` |
-| Tagged Git source | BB does not bundle the plugin | `bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.1 --yes` |
+| Tagged Git source | BB does not bundle the plugin | `bb plugin install git:https://github.com/Diffuzmetall/bb-plugin-excalidraw.git@v0.2.2 --yes` |
 | Local path | Developing or testing this checkout | `bb plugin install . --yes` |
 
 Requirements for a source installation:
 
-- BB 0.35.1 or newer;
+- BB 0.43.1 or newer;
 - BB Plugin SDK 0.4.x compatibility;
 - Node.js 22.19 or newer;
 - Git and npm on `PATH`.
@@ -514,7 +514,8 @@ BB installs Git plugins with lifecycle scripts disabled, and `bb plugin build` d
 CI runs `npm run check:vendor-css` through `npm run check` and fails if the committed stylesheet no longer matches the installed Excalidraw version. Do not move this generation to `postinstall`: Git installs intentionally use `--ignore-scripts`, and keeping the reviewed stylesheet in Git makes installation reproducible.
 
 CI also installs only production dependencies and builds the plugin with the
-BB 0.35.1 CLI, matching the Git-source installation path used by released
+BB 0.43.1 CLI (the `bb-app` release that `engines.bb` declares as the minimum
+supported BB), matching the Git-source installation path used by released
 tags.
 
 Before publishing a tag, verify a runtime-only source build:
